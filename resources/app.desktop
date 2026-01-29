@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Cosmic Calculator
+Comment=Cosmic Desktop Calculator
+Type=Application
+Icon=com.github.jepomeroy.cosmic-calculator
+Exec=cosmic-calculator %F
+Terminal=false
+StartupNotify=true
+Categories=COSMIC
+Keywords=COSMIC
+MimeType=
