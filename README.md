@@ -6,9 +6,9 @@ An unofficial calculator application for the Cosmic Desktop Environment.
 
 - Basic arithmetic operations (addition, subtraction, multiplication, division)
 - Clean and intuitive user interface following Cosmic DE design principles
-- Keyboard support for all operations
 - Decimal number support
 - Backspace to correct input mistakes
+- Error handling for division by zero
 
 ## Building
 
@@ -48,15 +48,6 @@ Run the calculator:
 ```bash
 cosmic-calculator
 ```
-
-### Keyboard Shortcuts
-
-- `0-9`: Input numbers
-- `+`, `-`, `*`, `/`: Arithmetic operators
-- `.`: Decimal point
-- `Enter` or `=`: Calculate result
-- `Backspace`: Delete last character
-- `Escape` or `C`: Clear all
 
 ## License
 

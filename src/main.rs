@@ -5,6 +5,8 @@ use cosmic::widget::{button, column, container, row, text};
 use cosmic::{executor, ApplicationExt, Element};
 
 const APP_ID: &str = "com.github.jepomeroy.CosmicCalculator";
+const MAX_DISPLAY_LENGTH: usize = 15;
+const MAX_DISPLAY_LENGTH_WITH_DECIMAL: usize = 14;
 
 fn main() -> cosmic::iced::Result {
     cosmic::app::run::<Calculator>(Settings::default(), ())?;
@@ -72,7 +74,7 @@ impl cosmic::Application for Calculator {
                 if self.new_number {
                     self.display = n.to_string();
                     self.new_number = false;
-                } else if self.display.len() < 15 {
+                } else if self.display.len() < MAX_DISPLAY_LENGTH {
                     if self.display == "0" {
                         self.display = n.to_string();
                     } else {
@@ -84,7 +86,7 @@ impl cosmic::Application for Calculator {
                 if self.new_number {
                     self.display = String::from("0.");
                     self.new_number = false;
-                } else if !self.display.contains('.') && self.display.len() < 14 {
+                } else if !self.display.contains('.') && self.display.len() < MAX_DISPLAY_LENGTH_WITH_DECIMAL {
                     self.display.push('.');
                 }
             }
@@ -143,12 +145,21 @@ impl cosmic::Application for Calculator {
         let button_row = |buttons: Vec<(String, Message)>| {
             let mut r = row().spacing(8);
             for (label, msg) in buttons {
-                r = r.push(
-                    button::text(label)
-                        .on_press(msg)
-                        .width(Length::Fill)
-                        .height(Length::Fixed(60.0))
-                );
+                if !label.is_empty() {
+                    r = r.push(
+                        button::text(label)
+                            .on_press(msg)
+                            .width(Length::Fill)
+                            .height(Length::Fixed(60.0))
+                    );
+                } else {
+                    // Add empty space for layout consistency
+                    r = r.push(
+                        container(text(""))
+                            .width(Length::Fill)
+                            .height(Length::Fixed(60.0))
+                    );
+                }
             }
             r
         };
@@ -182,6 +193,8 @@ impl cosmic::Application for Calculator {
             .push(button_row(vec![
                 (String::from("0"), Message::Number(0)),
                 (String::from("."), Message::Decimal),
+                (String::from(""), Message::Clear),  // Placeholder for layout consistency
+                (String::from(""), Message::Clear),  // Placeholder for layout consistency
             ]));
 
         let content = column()
@@ -211,7 +224,7 @@ impl Calculator {
                 if right != 0.0 {
                     left / right
                 } else {
-                    0.0
+                    f64::NAN
                 }
             }
         }
