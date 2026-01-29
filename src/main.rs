@@ -7,6 +7,8 @@ use cosmic::{executor, ApplicationExt, Element};
 const APP_ID: &str = "com.github.jepomeroy.CosmicCalculator";
 const MAX_DISPLAY_LENGTH: usize = 15;
 const MAX_DISPLAY_LENGTH_WITH_DECIMAL: usize = 14;
+const MAX_INTEGER_VALUE: f64 = 1e10;
+const DECIMAL_PLACES: usize = 10;
 
 fn main() -> cosmic::iced::Result {
     cosmic::app::run::<Calculator>(Settings::default(), ())?;
@@ -38,6 +40,7 @@ enum Message {
     Equals,
     Clear,
     Backspace,
+    NoOp,
 }
 
 impl cosmic::Application for Calculator {
@@ -71,6 +74,14 @@ impl cosmic::Application for Calculator {
     fn update(&mut self, message: Self::Message) -> Task<Self::Message> {
         match message {
             Message::Number(n) => {
+                // Clear error state before entering new number
+                if self.display == "Error" {
+                    self.display = String::from("0");
+                    self.new_number = true;
+                    self.current_value = 0.0;
+                    self.operator = None;
+                }
+                
                 if self.new_number {
                     self.display = n.to_string();
                     self.new_number = false;
@@ -83,6 +94,15 @@ impl cosmic::Application for Calculator {
                 }
             }
             Message::Decimal => {
+                // Clear error state before entering decimal
+                if self.display == "Error" {
+                    self.display = String::from("0.");
+                    self.new_number = false;
+                    self.current_value = 0.0;
+                    self.operator = None;
+                    return Task::none();
+                }
+                
                 if self.new_number {
                     self.display = String::from("0.");
                     self.new_number = false;
@@ -91,7 +111,12 @@ impl cosmic::Application for Calculator {
                 }
             }
             Message::Operator(op) => {
-                let display_value = self.display.parse::<f64>().unwrap_or(0.0);
+                // Handle error state - clear it and use 0 as current value
+                let display_value = if self.display == "Error" {
+                    0.0
+                } else {
+                    self.display.parse::<f64>().unwrap_or(0.0)
+                };
 
                 if let Some(operator) = self.operator {
                     self.current_value = self.calculate(self.current_value, display_value, operator);
@@ -105,7 +130,11 @@ impl cosmic::Application for Calculator {
             }
             Message::Equals => {
                 if let Some(operator) = self.operator {
-                    let display_value = self.display.parse::<f64>().unwrap_or(0.0);
+                    let display_value = if self.display == "Error" {
+                        0.0
+                    } else {
+                        self.display.parse::<f64>().unwrap_or(0.0)
+                    };
                     self.current_value = self.calculate(self.current_value, display_value, operator);
                     self.display = self.format_result(self.current_value);
                     self.operator = None;
@@ -119,12 +148,18 @@ impl cosmic::Application for Calculator {
                 self.new_number = true;
             }
             Message::Backspace => {
-                if !self.new_number && self.display.len() > 1 {
+                if self.display == "Error" {
+                    self.display = String::from("0");
+                    self.new_number = true;
+                } else if !self.new_number && self.display.len() > 1 {
                     self.display.pop();
                 } else if !self.new_number {
                     self.display = String::from("0");
                     self.new_number = true;
                 }
+            }
+            Message::NoOp => {
+                // Do nothing
             }
         }
 
@@ -193,8 +228,8 @@ impl cosmic::Application for Calculator {
             .push(button_row(vec![
                 (String::from("0"), Message::Number(0)),
                 (String::from("."), Message::Decimal),
-                (String::from(""), Message::Clear),  // Placeholder for layout consistency
-                (String::from(""), Message::Clear),  // Placeholder for layout consistency
+                (String::from(""), Message::NoOp),  // Empty placeholder for layout consistency
+                (String::from(""), Message::NoOp),  // Empty placeholder for layout consistency
             ]));
 
         let content = column()
@@ -233,10 +268,10 @@ impl Calculator {
     fn format_result(&self, value: f64) -> String {
         if value.is_infinite() || value.is_nan() {
             String::from("Error")
-        } else if value.fract() == 0.0 && value.abs() < 1e10 {
+        } else if value.fract() == 0.0 && value.abs() < MAX_INTEGER_VALUE {
             format!("{}", value as i64)
         } else {
-            let formatted = format!("{:.10}", value);
+            let formatted = format!("{:.prec$}", value, prec = DECIMAL_PLACES);
             formatted.trim_end_matches('0').trim_end_matches('.').to_string()
         }
     }
