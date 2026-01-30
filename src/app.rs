@@ -29,6 +29,8 @@ pub struct AppModel {
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     /// Configuration data that persists between application runs.
     config: Config,
+    /// Handle to the config context for persisting changes.
+    config_handler: Option<cosmic_config::Config>,
     /// Calculator history
     history: text_editor::Content,
     /// Calculator input
@@ -103,6 +105,33 @@ impl cosmic::Application for AppModel {
             .links([(fl!("repository"), REPOSITORY)])
             .license(env!("CARGO_PKG_LICENSE"));
 
+        // Load configuration from disk.
+        let (config, config_handler) =
+            match cosmic_config::Config::new(Self::APP_ID, Config::VERSION) {
+                Ok(context) => {
+                    let config = match Config::get_entry(&context) {
+                        Ok(config) => config,
+                        Err((_errors, config)) => config,
+                    };
+                    (config, Some(context))
+                }
+                Err(_) => (Config::default(), None),
+            };
+
+        // Activate the saved page from config.
+        if let Some(page) = Page::from_str(&config.page) {
+            let target = nav
+                .iter()
+                .find(|&id| {
+                    nav.data::<Page>(id)
+                        .map(|data| std::mem::discriminant(data) == std::mem::discriminant(&page))
+                        .unwrap_or(false)
+                });
+            if let Some(id) = target {
+                nav.activate(id);
+            }
+        }
+
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
             core,
@@ -110,19 +139,8 @@ impl cosmic::Application for AppModel {
             about,
             nav,
             key_binds: HashMap::new(),
-            // Optional configuration file for an application.
-            config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
-                .map(|context| match Config::get_entry(&context) {
-                    Ok(config) => config,
-                    Err((_errors, config)) => {
-                        // for why in errors {
-                        //     tracing::error!(%why, "error loading app config");
-                        // }
-
-                        config
-                    }
-                })
-                .unwrap_or_default(),
+            config,
+            config_handler,
             history: text_editor::Content::default(),
             input: "".to_string(),
             result: "0".to_string(),
@@ -279,6 +297,7 @@ impl cosmic::Application for AppModel {
             }
 
             Message::UpdateConfig(config) => {
+                println!("updating config: {:?}", config);
                 self.config = config;
             }
 
@@ -297,34 +316,20 @@ impl cosmic::Application for AppModel {
         // Activate the page in the model.
         self.nav.activate(id);
 
+        // Persist the selected page to config.
+        if let Some(page) = self.nav.active_data::<Page>() {
+            self.config.page = page.as_str().to_string();
+            if let Some(ref handler) = self.config_handler {
+                let _ = self.config.write_entry(handler);
+            }
+        }
+
         self.update_title()
     }
 }
 /// Substitute certain characters with their calc lib equivalents
 fn substitute(input: String) -> String {
     input.replace('*', "×").replace('/', "÷").replace('-', "−")
-}
-
-/// Validate input and allow only chars that the calc lib can handle
-/// Returns true if the action is valid, false otherwise
-fn validate_action(action: &text_editor::Action) -> bool {
-    match action {
-        text_editor::Action::Edit(edit) => match edit {
-            text_editor::Edit::Insert(t) => validate(t),
-            text_editor::Edit::Paste(t) => {
-                for c in t.chars() {
-                    if !validate(&c) {
-                        return false;
-                    }
-                }
-                true
-            }
-            // Enter, backspace, delete are always valid
-            _ => true,
-        },
-        // Non-edit actions are always valid
-        _ => true,
-    }
 }
 
 impl AppModel {
@@ -350,6 +355,25 @@ pub enum Page {
     Basic,
     Advanced,
     Developer,
+}
+
+impl Page {
+    fn as_str(&self) -> &str {
+        match self {
+            Page::Basic => "basic",
+            Page::Advanced => "advanced",
+            Page::Developer => "developer",
+        }
+    }
+
+    fn from_str(s: &str) -> Option<Page> {
+        match s {
+            "basic" => Some(Page::Basic),
+            "advanced" => Some(Page::Advanced),
+            "developer" => Some(Page::Developer),
+            _ => None,
+        }
+    }
 }
 
 /// The context page to display in the context drawer.
@@ -378,60 +402,4 @@ impl menu::action::MenuAction for MenuAction {
 mod tests {
     use super::*;
     use std::sync::Arc;
-
-    #[test]
-    fn test_valid_insert_action() {
-        // Valid insert action
-        // Numbers and operators
-        let valid_chars = vec![
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '-', '*', '/', '(', ')', '.',
-            '^', '%', '!', '=', '×', '÷', '−',
-        ];
-
-        for c in valid_chars {
-            let action = text_editor::Action::Edit(text_editor::Edit::Insert(c));
-            assert!(
-                validate_action(&action),
-                "Failed to validate insert action for char: {}",
-                c
-            );
-        }
-    }
-
-    #[test]
-    fn test_invalid_insert_action() {
-        // Invalid insert action
-        let invalid_chars = vec![
-            'a', 'b', 'c', ' ', '@', '#', '$', '&', '_', '[', ']', '{', '}', ';', ':', '"', '\'',
-            '<', '>', ',', '?', '\\', '|', '~', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
-            'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q',
-            'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ',
-        ];
-
-        for c in invalid_chars {
-            let action = text_editor::Action::Edit(text_editor::Edit::Insert(c));
-            assert!(
-                !validate_action(&action),
-                "Incorrectly validated insert action for char: {}",
-                c
-            );
-        }
-    }
-
-    #[test]
-    fn test_valid_paste_action() {
-        // Valid Paste action
-        let action =
-            text_editor::Action::Edit(text_editor::Edit::Paste(Arc::new("123+456".to_string())));
-        assert!(validate_action(&action));
-    }
-
-    #[test]
-    fn test_invalid_paste_action() {
-        // Invalid insert action
-        let action =
-            text_editor::Action::Edit(text_editor::Edit::Paste(Arc::new("123a456".to_string())));
-        assert!(!validate_action(&action));
-    }
 }

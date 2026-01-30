@@ -1,5 +1,5 @@
 #[derive(Debug, PartialEq, Clone)]
-pub enum Token {
+pub(crate) enum Token {
     Number(u32),
     Plus,
     Minus,
@@ -14,7 +14,7 @@ pub enum Token {
     Exclamation,
 }
 
-pub fn lookup_token(ch: char) -> Result<Option<Token>, String> {
+pub(crate) fn lookup_token(ch: char) -> Result<Option<Token>, String> {
     match ch {
         '=' => Ok(Some(Token::Equal)),
         '(' => Ok(Some(Token::LParen)),
