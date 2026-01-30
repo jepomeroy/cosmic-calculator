@@ -2,12 +2,13 @@
 
 use crate::config::Config;
 use crate::fl;
+use calclib::validator::validate;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Length, Padding};
 use cosmic::prelude::*;
-use cosmic::widget::{self, about::About, icon, menu, nav_bar, text_editor};
+use cosmic::widget::{self, about::About, icon, menu, nav_bar, text, text_editor, text_input};
 use std::collections::HashMap;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -28,13 +29,18 @@ pub struct AppModel {
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     /// Configuration data that persists between application runs.
     config: Config,
+    /// Calculator history
+    history: text_editor::Content,
     /// Calculator input
-    content: text_editor::Content,
+    input: String,
+    /// Calculator result
+    result: String,
 }
 
 /// Messages emitted by the application and its widgets.
 #[derive(Debug, Clone)]
 pub enum Message {
+    InputChanged(String),
     ActionPerformed(text_editor::Action),
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
@@ -117,7 +123,9 @@ impl cosmic::Application for AppModel {
                     }
                 })
                 .unwrap_or_default(),
-            content: text_editor::Content::default(),
+            history: text_editor::Content::default(),
+            input: "".to_string(),
+            result: "0".to_string(),
         };
 
         // Create a startup command that sets the window title.
@@ -165,26 +173,46 @@ impl cosmic::Application for AppModel {
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<'_, Self::Message> {
         let space_s = cosmic::theme::spacing().space_s;
-        let content: Element<_> = match self.nav.active_data::<Page>().unwrap() {
-            Page::Basic => {
-                let header = widget::row::with_capacity(1)
-                    .push(
-                        text_editor(&self.content)
-                            .on_action(Message::ActionPerformed)
-                            .wrapping(cosmic::iced_core::text::Wrapping::Word)
-                            .height(Length::Fixed(120.0))
-                            .padding(Padding::new(20.0)),
-                    )
-                    .align_y(Alignment::End)
-                    .spacing(space_s);
+        let history = widget::row::with_capacity(1)
+            .push(
+                text_editor(&self.history)
+                    .on_action(Message::ActionPerformed)
+                    .wrapping(cosmic::iced_core::text::Wrapping::Word)
+                    .height(Length::Fixed(120.0))
+                    .padding(Padding::new(20.0)),
+            )
+            .align_y(Alignment::End)
+            .spacing(space_s);
 
-                widget::column::with_capacity(2)
-                    .push(header)
-                    // .push(section)
-                    .spacing(space_s)
-                    .height(Length::Fill)
-                    .into()
-            }
+        let input = widget::row::with_capacity(1)
+            .push(
+                text_input("", &self.input)
+                    .on_input(Message::InputChanged)
+                    .always_active()
+                    .size(24)
+                    .padding(Padding::new(20.0)),
+            )
+            .align_y(Alignment::End)
+            .spacing(space_s);
+
+        let result = widget::row::with_capacity(1)
+            .push(
+                text(self.result.as_str())
+                    .size(24)
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Right),
+            )
+            .align_y(Alignment::End)
+            .spacing(space_s);
+
+        let content: Element<_> = match self.nav.active_data::<Page>().unwrap() {
+            Page::Basic => widget::column::with_capacity(2)
+                .push(history)
+                .push(input)
+                .push(result)
+                .spacing(space_s)
+                .height(Length::Fill)
+                .into(),
 
             Page::Advanced => {
                 let header = widget::row::with_capacity(2)
@@ -230,9 +258,14 @@ impl cosmic::Application for AppModel {
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
             Message::ActionPerformed(action) => {
-                // Handle action performed in the text editor.
-                println!("Action performed: {:?}", action);
-                self.content.perform(action);
+                if !action.is_edit() {
+                    self.history.perform(action);
+                }
+            }
+            Message::InputChanged(value) => {
+                if value.chars().all(|c| validate(&c)) {
+                    self.input = substitute(value);
+                }
             }
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
@@ -265,6 +298,32 @@ impl cosmic::Application for AppModel {
         self.nav.activate(id);
 
         self.update_title()
+    }
+}
+/// Substitute certain characters with their calc lib equivalents
+fn substitute(input: String) -> String {
+    input.replace('*', "×").replace('/', "÷").replace('-', "−")
+}
+
+/// Validate input and allow only chars that the calc lib can handle
+/// Returns true if the action is valid, false otherwise
+fn validate_action(action: &text_editor::Action) -> bool {
+    match action {
+        text_editor::Action::Edit(edit) => match edit {
+            text_editor::Edit::Insert(t) => validate(t),
+            text_editor::Edit::Paste(t) => {
+                for c in t.chars() {
+                    if !validate(&c) {
+                        return false;
+                    }
+                }
+                true
+            }
+            // Enter, backspace, delete are always valid
+            _ => true,
+        },
+        // Non-edit actions are always valid
+        _ => true,
     }
 }
 
@@ -312,5 +371,67 @@ impl menu::action::MenuAction for MenuAction {
         match self {
             MenuAction::About => Message::ToggleContextPage(ContextPage::About),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_valid_insert_action() {
+        // Valid insert action
+        // Numbers and operators
+        let valid_chars = vec![
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '-', '*', '/', '(', ')', '.',
+            '^', '%', '!', '=', '×', '÷', '−',
+        ];
+
+        for c in valid_chars {
+            let action = text_editor::Action::Edit(text_editor::Edit::Insert(c));
+            assert!(
+                validate_action(&action),
+                "Failed to validate insert action for char: {}",
+                c
+            );
+        }
+    }
+
+    #[test]
+    fn test_invalid_insert_action() {
+        // Invalid insert action
+        let invalid_chars = vec![
+            'a', 'b', 'c', ' ', '@', '#', '$', '&', '_', '[', ']', '{', '}', ';', ':', '"', '\'',
+            '<', '>', ',', '?', '\\', '|', '~', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
+            'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+            'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q',
+            'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ',
+        ];
+
+        for c in invalid_chars {
+            let action = text_editor::Action::Edit(text_editor::Edit::Insert(c));
+            assert!(
+                !validate_action(&action),
+                "Incorrectly validated insert action for char: {}",
+                c
+            );
+        }
+    }
+
+    #[test]
+    fn test_valid_paste_action() {
+        // Valid Paste action
+        let action =
+            text_editor::Action::Edit(text_editor::Edit::Paste(Arc::new("123+456".to_string())));
+        assert!(validate_action(&action));
+    }
+
+    #[test]
+    fn test_invalid_paste_action() {
+        // Invalid insert action
+        let action =
+            text_editor::Action::Edit(text_editor::Edit::Paste(Arc::new("123a456".to_string())));
+        assert!(!validate_action(&action));
     }
 }
