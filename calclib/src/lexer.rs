@@ -78,7 +78,7 @@ impl Lexer {
         self.read_position += 1;
     }
 
-    fn read_number(&mut self) -> Result<u32, ParseIntError> {
+    fn read_number(&mut self) -> Result<i64, ParseIntError> {
         let position = self.position;
         while self.ch.is_some() {
             if self.peek_is_digit() {
@@ -90,7 +90,7 @@ impl Lexer {
 
         let s = self.input[position..self.position + 1].to_string();
 
-        s.parse::<u32>()
+        s.parse::<i64>()
     }
 }
 
@@ -110,7 +110,7 @@ mod tests {
         for i in input {
             let mut l = Lexer::new(i.0.to_string());
             let token = l.next_token().unwrap().unwrap();
-            let expected_value = i.1 as u32;
+            let expected_value = i.1 as i64;
             assert_eq!(token, Token::Number(expected_value));
         }
     }

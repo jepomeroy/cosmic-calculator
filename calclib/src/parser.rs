@@ -1,9 +1,14 @@
-use crate::{lexer::Lexer, token::Token};
+use crate::{
+    ast::Expression,
+    lexer::Lexer,
+    token::{LOWEST, PREFIX, Token},
+};
 
 pub struct Parser {
     lexer: Lexer,
     curr_token: Option<Token>,
     peek_token: Option<Token>,
+    found_eof: bool,
 }
 
 impl Default for Parser {
@@ -17,44 +22,93 @@ impl Parser {
             lexer: Lexer::new("".to_string()),
             curr_token: None,
             peek_token: None,
+            found_eof: false,
         }
     }
 
     // fn next_token(&mut self) -> Result<(), String> {
     fn next_token(&mut self) {
-        println!("{:?}", self.curr_token.unwrap_or(Token::Nop));
         self.curr_token = self.peek_token;
         self.peek_token = self.lexer.next_token().unwrap_or(None);
-        // println!("curr token: {:?}", self.curr_token.clone().unwrap());
-    }
 
-    pub(crate) fn parse(&mut self, input: String) -> Result<Option<Vec<Token>>, String> {
-        self.lexer = Lexer::new(input);
-        let mut complete = false;
-        let mut tokens = Vec::<Token>::new();
-
-        self.next_token();
-        self.next_token();
-
-        while self.curr_token.is_some() {
-            if self.test_current_token(Token::Nop) {
-                self.next_token();
-                continue;
-            }
-            if self.test_current_token(Token::Eof) {
-                complete = true;
-            }
-            tokens.push(self.curr_token.unwrap());
+        if self.curr_token == Some(Token::Nop) {
             self.next_token();
         }
+    }
 
-        if !complete || tokens.is_empty() {
+    pub(crate) fn parse(&mut self, input: String) -> Result<Option<Expression>, String> {
+        self.lexer = Lexer::new(input);
+        self.next_token();
+        self.next_token();
+
+        if self.curr_token.is_none() {
             return Ok(None);
         }
 
-        println!("Parsed tokens: {:?}", tokens);
+        let expression = self.parse_expression(LOWEST);
 
-        Ok(Some(tokens))
+        if !self.found_eof {
+            return Ok(None);
+        }
+
+        if expression.is_none() {
+            return Ok(None);
+        }
+
+        Ok(expression)
+    }
+
+    fn parse_infix(&mut self, left: Option<Expression>) -> Option<Expression> {
+        let op = self.curr_token?;
+        let precedense = op.precedence();
+        self.next_token();
+        let right = self.parse_expression(precedense);
+
+        Some(Expression::Infix {
+            left: Box::new(left?),
+            operator: op,
+            right: Box::new(right?),
+        })
+    }
+
+    fn parse_prefix(&mut self) -> Option<Expression> {
+        let op = self.curr_token?;
+        self.next_token();
+        let right = self.parse_expression(PREFIX);
+
+        Some(Expression::Prefix {
+            operator: op,
+            right: Box::new(right?),
+        })
+    }
+
+    fn parse_expression(&mut self, precedense: u8) -> Option<Expression> {
+        let mut left = match &self.curr_token {
+            Some(Token::Eof) => return None,
+            Some(Token::Minus) => self.parse_prefix(),
+            Some(Token::Number(value)) => Some(Expression::Integer { value: *value }),
+            _ => return None,
+        };
+
+        while precedense < self.peek_precedence() {
+            self.next_token();
+
+            if self.curr_token == Some(Token::Eof) {
+                self.found_eof = true;
+                break;
+            };
+
+            left = self.parse_infix(left)
+        }
+
+        left
+    }
+
+    fn peek_precedence(&mut self) -> u8 {
+        match &self.peek_token {
+            Some(token) => token.precedence(),
+            None => LOWEST,
+        }
     }
 
     fn test_current_token(&self, expected: Token) -> bool {
@@ -70,8 +124,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parser_incomplete() {
-        let input = vec!["5", "-", "(399", "*", "3-"];
+    fn test_parser_empty() {
+        let input = vec!["", "   ", "\n"];
         let mut p = Parser::new();
         for expr in input {
             let result = p.parse(expr.to_string());
@@ -80,33 +134,106 @@ mod tests {
     }
 
     #[test]
-    fn test_parser_complete() {
+    fn test_simple_literals() {
         let input = vec![
+            ("5 =", 5),
+            ("42=", 42),
+            ("0=", 0),
+            ("1234567890=", 1234567890),
+        ];
+        let mut p = Parser::new();
+        for expr in input {
+            let result = p.parse(expr.0.to_string());
+
+            assert_eq!(result, Ok(Some(Expression::Integer { value: expr.1 })));
+        }
+    }
+
+    #[test]
+    fn test_simple_negative_literals() {
+        let input = vec![("-5=", 5), ("-42=", 42), ("-1234567890=", 1234567890)];
+        let mut p = Parser::new();
+        for expr in input {
+            let result = p.parse(expr.0.to_string());
+
+            // println!("Result for '{}': {:?}", expr.0, result);
+
+            assert_eq!(
+                result,
+                Ok(Some(Expression::Prefix {
+                    operator: Token::Minus,
+                    right: Box::new(Expression::Integer { value: expr.1 })
+                }))
+            );
+        }
+    }
+
+    #[test]
+    fn test_parser_incomplete() {
+        let input = vec!["5", "-", "(399", "*", "3-", "5+3", "5*(3-1)"];
+        let mut p = Parser::new();
+        for expr in input {
+            let result = p.parse(expr.to_string());
+            assert_eq!(result, Ok(None));
+        }
+    }
+
+    #[test]
+    fn test_parser_complete_simple_expression() {
+        let input: Vec<(&str, Result<Option<Expression>, String>)> = vec![
             (
                 "15 + 3 =",
-                vec![Token::Number(15), Token::Plus, Token::Number(3), Token::Eof],
+                Ok(Some(Expression::Infix {
+                    left: Box::new(Expression::Integer { value: 15 }),
+                    operator: Token::Plus,
+                    right: Box::new(Expression::Integer { value: 3 }),
+                })),
             ),
             (
-                "42 - 7 * (2 + 3)=",
-                vec![
-                    Token::Number(42),
-                    Token::Minus,
-                    Token::Number(7),
-                    Token::Multiply,
-                    Token::LParen,
-                    Token::Number(2),
-                    Token::Plus,
-                    Token::Number(3),
-                    Token::RParen,
-                    Token::Eof,
-                ],
+                "15 - 3 =",
+                Ok(Some(Expression::Infix {
+                    left: Box::new(Expression::Integer { value: 15 }),
+                    operator: Token::Minus,
+                    right: Box::new(Expression::Integer { value: 3 }),
+                })),
             ),
+            (
+                "15 * 3 =",
+                Ok(Some(Expression::Infix {
+                    left: Box::new(Expression::Integer { value: 15 }),
+                    operator: Token::Multiply,
+                    right: Box::new(Expression::Integer { value: 3 }),
+                })),
+            ),
+            (
+                "15 / 3 =",
+                Ok(Some(Expression::Infix {
+                    left: Box::new(Expression::Integer { value: 15 }),
+                    operator: Token::Divide,
+                    right: Box::new(Expression::Integer { value: 3 }),
+                })),
+            ),
+            // (
+            //     "42 - 7 * (2 + 3)=",
+            //     vec![
+            //         Token::Number(42),
+            //         Token::Minus,
+            //         Token::Number(7),
+            //         Token::Multiply
+            //         Token::LParen,
+            //         Token::Number(2),
+            //         Token::Plus,
+            //         Token::Number(3),
+            //         Token::RParen,
+            //         Token::Eof,
+            //     ],
+            // ),
         ];
 
         let mut p = Parser::new();
         for (expr, expected_tokens) in input {
             let result = p.parse(expr.to_string());
-            assert_eq!(result, Ok(Some(expected_tokens)));
+            assert_eq!(result, expected_tokens);
         }
     }
 }

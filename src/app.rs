@@ -8,11 +8,14 @@ use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Length, Padding};
 use cosmic::prelude::*;
-use cosmic::widget::{self, about::About, icon, menu, nav_bar, text, text_editor, text_input};
+use cosmic::widget::{
+    self, Id, about::About, button, icon, menu, nav_bar, text, text_editor, text_input,
+};
 use std::collections::HashMap;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
+const INPUT_ID: &str = "calculator-input";
 
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
@@ -43,6 +46,7 @@ pub struct AppModel {
 #[derive(Debug, Clone)]
 pub enum Message {
     InputChanged(String),
+    KeyPressed(String),
     ActionPerformed(text_editor::Action),
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
@@ -120,13 +124,11 @@ impl cosmic::Application for AppModel {
 
         // Activate the saved page from config.
         if let Some(page) = Page::from_str(&config.page) {
-            let target = nav
-                .iter()
-                .find(|&id| {
-                    nav.data::<Page>(id)
-                        .map(|data| std::mem::discriminant(data) == std::mem::discriminant(&page))
-                        .unwrap_or(false)
-                });
+            let target = nav.iter().find(|&id| {
+                nav.data::<Page>(id)
+                    .map(|data| std::mem::discriminant(data) == std::mem::discriminant(&page))
+                    .unwrap_or(false)
+            });
             if let Some(id) = target {
                 nav.activate(id);
             }
@@ -205,6 +207,7 @@ impl cosmic::Application for AppModel {
         let input = widget::row::with_capacity(1)
             .push(
                 text_input("", &self.input)
+                    .id(Id::new(INPUT_ID))
                     .on_input(Message::InputChanged)
                     .always_active()
                     .size(24)
@@ -212,6 +215,50 @@ impl cosmic::Application for AppModel {
             )
             .align_y(Alignment::End)
             .spacing(space_s);
+
+        let basic_keyboard: Element<_> = widget::column::with_capacity(1)
+            .push(
+                widget::row::with_capacity(4)
+                    .push(make_button("C", None))
+                    .push(make_button("±", None))
+                    .push(make_button("%", None))
+                    .push(make_button("⌫", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(4)
+                    .push(make_button("7", None))
+                    .push(make_button("8", None))
+                    .push(make_button("9", None))
+                    .push(make_button("÷", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(4)
+                    .push(make_button("4", None))
+                    .push(make_button("5", None))
+                    .push(make_button("6", None))
+                    .push(make_button("×", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(4)
+                    .push(make_button("1", None))
+                    .push(make_button("2", None))
+                    .push(make_button("3", None))
+                    .push(make_button("−", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(4)
+                    .push(make_button("0", None))
+                    .push(make_button(".", None))
+                    .push(make_button("=", None))
+                    .push(make_button("+", None))
+                    .spacing(space_s),
+            )
+            .spacing(space_s)
+            .into();
 
         let result = widget::row::with_capacity(1)
             .push(
@@ -224,10 +271,11 @@ impl cosmic::Application for AppModel {
             .spacing(space_s);
 
         let content: Element<_> = match self.nav.active_data::<Page>().unwrap() {
-            Page::Basic => widget::column::with_capacity(2)
+            Page::Basic => widget::column::with_capacity(3)
                 .push(history)
                 .push(input)
                 .push(result)
+                .push(basic_keyboard)
                 .spacing(space_s)
                 .height(Length::Fill)
                 .into(),
@@ -281,9 +329,35 @@ impl cosmic::Application for AppModel {
                 }
             }
             Message::InputChanged(value) => {
+                println!("input changed: {}", value);
+
                 if value.chars().all(|c| validate(&c)) {
                     self.input = substitute(value);
                 }
+            }
+            Message::KeyPressed(value) => {
+                println!("key pressed: {}", value);
+
+                match value.as_str() {
+                    "C" => {
+                        self.input.clear();
+                    }
+                    "⌫" => {
+                        self.input.pop();
+                    }
+                    "±" => {
+                        if self.input.starts_with('-') {
+                            self.input.remove(0);
+                        } else {
+                            self.input.insert(0, '-');
+                        }
+                    }
+                    _ => {
+                        self.input.push_str(&value);
+                    }
+                }
+
+                return text_input::move_cursor_to_end(Id::new(INPUT_ID));
             }
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
@@ -295,12 +369,10 @@ impl cosmic::Application for AppModel {
                     self.core.window.show_context = true;
                 }
             }
-
             Message::UpdateConfig(config) => {
                 println!("updating config: {:?}", config);
                 self.config = config;
             }
-
             Message::LaunchUrl(url) => match open::that_detached(&url) {
                 Ok(()) => {}
                 Err(err) => {
@@ -330,6 +402,24 @@ impl cosmic::Application for AppModel {
 /// Substitute certain characters with their calc lib equivalents
 fn substitute(input: String) -> String {
     input.replace('*', "×").replace('/', "÷").replace('-', "−")
+}
+
+fn make_button(label: &str, handler: Option<Message>) -> Element<'_, Message> {
+    let text_handler = handler.unwrap_or(Message::KeyPressed(label.to_string()));
+
+    button::custom(
+        text(label)
+            .size(20)
+            .font(cosmic::font::bold())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Center),
+    )
+    .width(60)
+    .height(40)
+    .on_press(text_handler)
+    .into()
 }
 
 impl AppModel {
