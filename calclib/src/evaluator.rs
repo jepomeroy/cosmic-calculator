@@ -30,7 +30,7 @@ pub fn evaluate(input: String) -> Result<EvaluationResult, String> {
     let parse_val = parser.parse(input);
 
     match parse_val {
-        Err(e) => return Err(e),
+        Err(e) => Err(e),
         Ok(v) => {
             println!("Parser output: {:?}", v);
             match v {
@@ -44,7 +44,7 @@ pub fn evaluate(input: String) -> Result<EvaluationResult, String> {
                         // int_value: None,
                     })
                 }
-                None => return Err("No expression to evaluate".to_string()),
+                None => Err("No expression to evaluate".to_string()),
             }
         }
     }

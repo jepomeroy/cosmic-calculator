@@ -548,3 +548,4 @@ impl menu::action::MenuAction for MenuAction {
         }
     }
 }
+

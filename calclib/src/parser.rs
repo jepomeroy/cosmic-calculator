@@ -26,13 +26,9 @@ impl Parser {
         }
     }
 
-    // fn next_token(&mut self) -> Result<(), String> {
     fn next_token(&mut self) {
         self.curr_token = self.peek_token;
-        self.peek_token = match self.lexer.next_token() {
-            Ok(token) => Some(token),
-            Err(_) => None,
-        };
+        self.peek_token = self.lexer.next_token().ok();
     }
 
     pub(crate) fn parse(&mut self, input: String) -> Result<Option<Expression>, String> {
