@@ -29,15 +29,15 @@ impl Parser {
     // fn next_token(&mut self) -> Result<(), String> {
     fn next_token(&mut self) {
         self.curr_token = self.peek_token;
-        self.peek_token = self.lexer.next_token().unwrap_or(None);
-
-        if self.curr_token == Some(Token::Nop) {
-            self.next_token();
-        }
+        self.peek_token = match self.lexer.next_token() {
+            Ok(token) => Some(token),
+            Err(_) => None,
+        };
     }
 
     pub(crate) fn parse(&mut self, input: String) -> Result<Option<Expression>, String> {
         self.lexer = Lexer::new(input);
+        self.found_eof = false;
         self.next_token();
         self.next_token();
 
@@ -59,6 +59,23 @@ impl Parser {
     }
 
     fn parse_infix(&mut self, left: Option<Expression>) -> Option<Expression> {
+        // Handle implicit multiplication: 5(3-1) -> 5 * (3-1)
+        if self.curr_token == Some(Token::LParen) {
+            self.next_token();
+            let right = self.parse_expression(LOWEST);
+            self.next_token();
+
+            if !self.test_current_token(Token::RParen) {
+                return None;
+            }
+
+            return Some(Expression::Infix {
+                left: Box::new(left?),
+                operator: Token::Multiply,
+                right: Box::new(right?),
+            });
+        }
+
         let op = self.curr_token?;
         let precedense = op.precedence();
         self.next_token();
@@ -86,6 +103,17 @@ impl Parser {
         let mut left = match &self.curr_token {
             Some(Token::Eof) => return None,
             Some(Token::Minus) => self.parse_prefix(),
+            Some(Token::LParen) => {
+                self.next_token();
+                let expr = self.parse_expression(LOWEST);
+                self.next_token();
+
+                if !self.test_current_token(Token::RParen) {
+                    return None;
+                }
+
+                expr
+            }
             Some(Token::Number(value)) => Some(Expression::Integer { value: *value }),
             _ => return None,
         };
@@ -125,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_parser_empty() {
-        let input = vec!["", "   ", "\n"];
+        let input = vec![""];
         let mut p = Parser::new();
         for expr in input {
             let result = p.parse(expr.to_string());
@@ -135,12 +163,7 @@ mod tests {
 
     #[test]
     fn test_simple_literals() {
-        let input = vec![
-            ("5 =", 5),
-            ("42=", 42),
-            ("0=", 0),
-            ("1234567890=", 1234567890),
-        ];
+        let input = vec![("5", 5), ("42", 42), ("0", 0), ("1234567890", 1234567890)];
         let mut p = Parser::new();
         for expr in input {
             let result = p.parse(expr.0.to_string());
@@ -151,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_simple_negative_literals() {
-        let input = vec![("-5=", 5), ("-42=", 42), ("-1234567890=", 1234567890)];
+        let input = vec![("-5", 5), ("-42", 42), ("-1234567890", 1234567890)];
         let mut p = Parser::new();
         for expr in input {
             let result = p.parse(expr.0.to_string());
@@ -170,7 +193,7 @@ mod tests {
 
     #[test]
     fn test_parser_incomplete() {
-        let input = vec!["5", "-", "(399", "*", "3-", "5+3", "5*(3-1)"];
+        let input = vec!["-", "(399", "*", "3-", "-5+"];
         let mut p = Parser::new();
         for expr in input {
             let result = p.parse(expr.to_string());
@@ -182,7 +205,7 @@ mod tests {
     fn test_parser_complete_simple_expression() {
         let input: Vec<(&str, Result<Option<Expression>, String>)> = vec![
             (
-                "15 + 3 =",
+                "15+3",
                 Ok(Some(Expression::Infix {
                     left: Box::new(Expression::Integer { value: 15 }),
                     operator: Token::Plus,
@@ -190,7 +213,7 @@ mod tests {
                 })),
             ),
             (
-                "15 - 3 =",
+                "15-3",
                 Ok(Some(Expression::Infix {
                     left: Box::new(Expression::Integer { value: 15 }),
                     operator: Token::Minus,
@@ -198,7 +221,7 @@ mod tests {
                 })),
             ),
             (
-                "15 * 3 =",
+                "15*3",
                 Ok(Some(Expression::Infix {
                     left: Box::new(Expression::Integer { value: 15 }),
                     operator: Token::Multiply,
@@ -206,28 +229,89 @@ mod tests {
                 })),
             ),
             (
-                "15 / 3 =",
+                "15/3",
                 Ok(Some(Expression::Infix {
                     left: Box::new(Expression::Integer { value: 15 }),
                     operator: Token::Divide,
                     right: Box::new(Expression::Integer { value: 3 }),
                 })),
             ),
-            // (
-            //     "42 - 7 * (2 + 3)=",
-            //     vec![
-            //         Token::Number(42),
-            //         Token::Minus,
-            //         Token::Number(7),
-            //         Token::Multiply
-            //         Token::LParen,
-            //         Token::Number(2),
-            //         Token::Plus,
-            //         Token::Number(3),
-            //         Token::RParen,
-            //         Token::Eof,
-            //     ],
-            // ),
+        ];
+
+        let mut p = Parser::new();
+        for (expr, expected_tokens) in input {
+            let result = p.parse(expr.to_string());
+            assert_eq!(result, expected_tokens);
+        }
+    }
+
+    #[test]
+    fn test_parser_complete_complex_expressions() {
+        let input: Vec<(&str, Result<Option<Expression>, String>)> = vec![
+            (
+                "5*(3-1)",
+                Ok(Some(Expression::Infix {
+                    left: Box::new(Expression::Integer { value: 5 }),
+                    operator: Token::Multiply,
+                    right: Box::new(Expression::Infix {
+                        left: Box::new(Expression::Integer { value: 3 }),
+                        operator: Token::Minus,
+                        right: Box::new(Expression::Integer { value: 1 }),
+                    }),
+                })),
+            ),
+            (
+                "5(3-1)",
+                Ok(Some(Expression::Infix {
+                    left: Box::new(Expression::Integer { value: 5 }),
+                    operator: Token::Multiply,
+                    right: Box::new(Expression::Infix {
+                        left: Box::new(Expression::Integer { value: 3 }),
+                        operator: Token::Minus,
+                        right: Box::new(Expression::Integer { value: 1 }),
+                    }),
+                })),
+            ),
+            (
+                "5*(3-1*4+8)/2",
+                Ok(Some(Expression::Infix {
+                    left: Box::new(Expression::Infix {
+                        left: Box::new(Expression::Integer { value: 5 }),
+                        operator: Token::Multiply,
+                        right: Box::new(Expression::Infix {
+                            left: Box::new(Expression::Infix {
+                                left: Box::new(Expression::Integer { value: 3 }),
+                                operator: Token::Minus,
+                                right: Box::new(Expression::Infix {
+                                    left: Box::new(Expression::Integer { value: 1 }),
+                                    operator: Token::Multiply,
+                                    right: Box::new(Expression::Integer { value: 4 }),
+                                }),
+                            }),
+                            operator: Token::Plus,
+                            right: Box::new(Expression::Integer { value: 8 }),
+                        }),
+                    }),
+                    operator: Token::Divide,
+                    right: Box::new(Expression::Integer { value: 2 }),
+                })),
+            ),
+            (
+                "42-7*(2+3)",
+                Ok(Some(Expression::Infix {
+                    left: Box::new(Expression::Integer { value: 42 }),
+                    operator: Token::Minus,
+                    right: Box::new(Expression::Infix {
+                        left: Box::new(Expression::Integer { value: 7 }),
+                        operator: Token::Multiply,
+                        right: Box::new(Expression::Infix {
+                            left: Box::new(Expression::Integer { value: 2 }),
+                            operator: Token::Plus,
+                            right: Box::new(Expression::Integer { value: 3 }),
+                        }),
+                    }),
+                })),
+            ),
         ];
 
         let mut p = Parser::new();

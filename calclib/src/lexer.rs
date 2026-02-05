@@ -20,27 +20,25 @@ impl Lexer {
         lexer
     }
 
-    fn lookup_token(&mut self, ch: char) -> Result<Option<Token>, String> {
+    fn lookup_token(&mut self, ch: char) -> Result<Token, String> {
         match ch {
-            '(' => Ok(Some(Token::LParen)),
-            ')' => Ok(Some(Token::RParen)),
-            '+' => Ok(Some(Token::Plus)),
-            '-' => Ok(Some(Token::Minus)),
-            '*' => Ok(Some(Token::Multiply)),
-            '/' => Ok(Some(Token::Divide)),
-            '×' => Ok(Some(Token::Multiply)),
-            '÷' => Ok(Some(Token::Divide)),
-            '^' => Ok(Some(Token::Caret)),
-            '%' => Ok(Some(Token::Percent)),
-            '.' => Ok(Some(Token::Period)),
-            '!' => Ok(Some(Token::Exclamation)),
-            '=' | '\n' => Ok(Some(Token::Eof)),
-            ' ' => Ok(Some(Token::Nop)),
+            '(' => Ok(Token::LParen),
+            ')' => Ok(Token::RParen),
+            '+' => Ok(Token::Plus),
+            '-' => Ok(Token::Minus),
+            '*' => Ok(Token::Multiply),
+            '/' => Ok(Token::Divide),
+            '×' => Ok(Token::Multiply),
+            '÷' => Ok(Token::Divide),
+            '^' => Ok(Token::Caret),
+            '%' => Ok(Token::Percent),
+            '.' => Ok(Token::Period),
+            '!' => Ok(Token::Exclamation),
             '0'..='9' => {
                 let num = self.read_number();
 
                 match num {
-                    Ok(value) => Ok(Some(Token::Number(value))),
+                    Ok(value) => Ok(Token::Number(value)),
                     Err(_) => Err("Failed to parse number".to_string()),
                 }
             }
@@ -48,14 +46,14 @@ impl Lexer {
         }
     }
 
-    pub(crate) fn next_token(&mut self) -> Result<Option<Token>, String> {
+    pub(crate) fn next_token(&mut self) -> Result<Token, String> {
         if let Some(ch) = self.ch {
             let token = self.lookup_token(ch);
             self.read_char();
 
             token
         } else {
-            Ok(None)
+            Ok(Token::Eof)
         }
     }
 
@@ -109,7 +107,7 @@ mod tests {
 
         for i in input {
             let mut l = Lexer::new(i.0.to_string());
-            let token = l.next_token().unwrap().unwrap();
+            let token = l.next_token().unwrap();
             let expected_value = i.1 as i64;
             assert_eq!(token, Token::Number(expected_value));
         }
@@ -117,7 +115,7 @@ mod tests {
 
     #[test]
     fn test_lexer_operators() {
-        let input = "+-*/()%^=!.\n ";
+        let input = "+-*/()%^!.";
         let mut l = Lexer::new(input.to_string());
 
         let expected_tokens = vec![
@@ -129,15 +127,12 @@ mod tests {
             Token::RParen,
             Token::Percent,
             Token::Caret,
-            Token::Eof,
             Token::Exclamation,
             Token::Period,
-            Token::Eof,
-            Token::Nop,
         ];
 
         for expected in expected_tokens {
-            let token = l.next_token().unwrap().unwrap();
+            let token = l.next_token().unwrap();
             assert_eq!(token, expected);
         }
     }
