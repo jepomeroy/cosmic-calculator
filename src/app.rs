@@ -2,15 +2,14 @@
 
 use crate::config::Config;
 use crate::fl;
+use calclib::evaluator::evaluate;
 use calclib::validator::validate;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Length, Padding};
 use cosmic::prelude::*;
-use cosmic::widget::{
-    self, Id, about::About, button, icon, menu, nav_bar, text, text_editor, text_input,
-};
+use cosmic::widget::{self, Id, about::About, button, icon, menu, nav_bar, text, text_input};
 use std::collections::HashMap;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -34,8 +33,8 @@ pub struct AppModel {
     config: Config,
     /// Handle to the config context for persisting changes.
     config_handler: Option<cosmic_config::Config>,
-    /// Calculator history
-    history: text_editor::Content,
+    /// Calculator history (expression, result) pairs
+    history: Vec<(String, String)>,
     /// Calculator input
     input: String,
     /// Calculator result
@@ -47,7 +46,7 @@ pub struct AppModel {
 pub enum Message {
     InputChanged(String),
     KeyPressed(String),
-    ActionPerformed(text_editor::Action),
+    CopyResultToInput(String),
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
@@ -143,7 +142,7 @@ impl cosmic::Application for AppModel {
             key_binds: HashMap::new(),
             config,
             config_handler,
-            history: text_editor::Content::default(),
+            history: Vec::new(),
             input: "".to_string(),
             result: "0".to_string(),
         };
@@ -193,22 +192,48 @@ impl cosmic::Application for AppModel {
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<'_, Self::Message> {
         let space_s = cosmic::theme::spacing().space_s;
-        let history = widget::row::with_capacity(1)
-            .push(
-                text_editor(&self.history)
-                    .on_action(Message::ActionPerformed)
-                    .wrapping(cosmic::iced_core::text::Wrapping::Word)
-                    .height(Length::Fixed(120.0))
-                    .padding(Padding::new(20.0)),
-            )
-            .align_y(Alignment::End)
-            .spacing(space_s);
+
+        // Build history list from entries
+        let history_items: Vec<Element<'_, Self::Message>> = self
+            .history
+            .iter()
+            .map(|(expr, result)| {
+                widget::row::with_capacity(2)
+                    .push(
+                        text(format!("{} = {}", expr, result))
+                            .size(14)
+                            .width(Length::Fill)
+                            .align_x(Horizontal::Right),
+                    )
+                    .push(widget::tooltip(
+                        button::icon(icon::from_name("edit-copy-symbolic").size(14))
+                            .extra_small()
+                            .on_press(Message::CopyResultToInput(result.clone())),
+                        text("Copy to input"),
+                        widget::tooltip::Position::Left,
+                    ))
+                    .align_y(Alignment::Center)
+                    .spacing(8)
+                    .into()
+            })
+            .collect();
+
+        let history_column = widget::column::with_children(history_items)
+            .spacing(4)
+            .width(Length::Fill);
+
+        let history = widget::container(widget::scrollable(history_column).height(Length::Fill))
+            .height(Length::Fixed(120.0))
+            .width(Length::Fill)
+            .padding(Padding::new(8.0))
+            .class(cosmic::theme::Container::Card);
 
         let input = widget::row::with_capacity(1)
             .push(
                 text_input("", &self.input)
                     .id(Id::new(INPUT_ID))
                     .on_input(Message::InputChanged)
+                    .on_submit(|_| Message::KeyPressed("=".to_string()))
                     .always_active()
                     .size(24)
                     .padding(Padding::new(20.0)),
@@ -218,7 +243,8 @@ impl cosmic::Application for AppModel {
 
         let basic_keyboard: Element<_> = widget::column::with_capacity(1)
             .push(
-                widget::row::with_capacity(4)
+                widget::row::with_capacity(5)
+                    .push(make_button("AC", None))
                     .push(make_button("C", None))
                     .push(make_button("±", None))
                     .push(make_button("%", None))
@@ -226,19 +252,21 @@ impl cosmic::Application for AppModel {
                     .spacing(space_s),
             )
             .push(
-                widget::row::with_capacity(4)
+                widget::row::with_capacity(5)
                     .push(make_button("7", None))
                     .push(make_button("8", None))
                     .push(make_button("9", None))
                     .push(make_button("÷", None))
+                    .push(make_button("(", None))
                     .spacing(space_s),
             )
             .push(
-                widget::row::with_capacity(4)
+                widget::row::with_capacity(5)
                     .push(make_button("4", None))
                     .push(make_button("5", None))
                     .push(make_button("6", None))
                     .push(make_button("×", None))
+                    .push(make_button(")", None))
                     .spacing(space_s),
             )
             .push(
@@ -247,6 +275,7 @@ impl cosmic::Application for AppModel {
                     .push(make_button("2", None))
                     .push(make_button("3", None))
                     .push(make_button("−", None))
+                    .push(make_button("!", None))
                     .spacing(space_s),
             )
             .push(
@@ -323,24 +352,34 @@ impl cosmic::Application for AppModel {
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::ActionPerformed(action) => {
-                if !action.is_edit() {
-                    self.history.perform(action);
-                }
-            }
             Message::InputChanged(value) => {
                 println!("input changed: {}", value);
+
+                if value.chars().any(|c| c == '=' || c == '\n') {
+                    self.evaluate_input();
+                    return Task::none();
+                }
 
                 if value.chars().all(|c| validate(&c)) {
                     self.input = substitute(value);
                 }
             }
+            Message::CopyResultToInput(result) => {
+                self.input.push_str(&result);
+                return text_input::move_cursor_to_end(Id::new(INPUT_ID));
+            }
             Message::KeyPressed(value) => {
                 println!("key pressed: {}", value);
 
                 match value.as_str() {
+                    "AC" => {
+                        self.history.clear();
+                        self.input.clear();
+                        self.result = "0".to_string();
+                    }
                     "C" => {
                         self.input.clear();
+                        self.result = "0".to_string();
                     }
                     "⌫" => {
                         self.input.pop();
@@ -351,6 +390,9 @@ impl cosmic::Application for AppModel {
                         } else {
                             self.input.insert(0, '-');
                         }
+                    }
+                    "=" => {
+                        self.evaluate_input();
                     }
                     _ => {
                         self.input.push_str(&value);
@@ -436,6 +478,25 @@ impl AppModel {
             self.set_window_title(window_title, id)
         } else {
             Task::none()
+        }
+    }
+
+    /// Evaluate the current input and update the result and history
+    pub fn evaluate_input(&mut self) {
+        let expression = self
+            .input
+            .replace('×', "*")
+            .replace('÷', "/")
+            .replace('−', "-");
+        match evaluate(expression) {
+            Ok(result) => {
+                self.result = result.value();
+                self.history.push((self.input.clone(), self.result.clone()));
+                self.input.clear();
+            }
+            Err(err) => {
+                self.result = format!("Error: {}", err);
+            }
         }
     }
 }
