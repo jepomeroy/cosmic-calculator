@@ -548,9 +548,3 @@ impl menu::action::MenuAction for MenuAction {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::Arc;
-}
