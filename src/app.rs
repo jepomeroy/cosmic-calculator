@@ -15,6 +15,7 @@ use std::collections::HashMap;
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
 const INPUT_ID: &str = "calculator-input";
+const HISTORY_ID: &str = "history-scrollable";
 
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
@@ -222,7 +223,11 @@ impl cosmic::Application for AppModel {
             .spacing(4)
             .width(Length::Fill);
 
-        let history = widget::container(widget::scrollable(history_column).height(Length::Fill))
+        let history = widget::container(
+            widget::scrollable(history_column)
+                .id(Id::new(HISTORY_ID))
+                .height(Length::Fill),
+        )
             .height(Length::Fixed(120.0))
             .width(Length::Fill)
             .padding(Padding::new(8.0))
@@ -356,8 +361,7 @@ impl cosmic::Application for AppModel {
                 println!("input changed: {}", value);
 
                 if value.chars().any(|c| c == '=' || c == '\n') {
-                    self.evaluate_input();
-                    return Task::none();
+                    return self.evaluate_input();
                 }
 
                 if value.chars().all(|c| validate(&c)) {
@@ -392,7 +396,11 @@ impl cosmic::Application for AppModel {
                         }
                     }
                     "=" => {
-                        self.evaluate_input();
+                        let scroll_task = self.evaluate_input();
+                        return Task::batch([
+                            scroll_task,
+                            text_input::move_cursor_to_end(Id::new(INPUT_ID)),
+                        ]);
                     }
                     _ => {
                         self.input.push_str(&value);
@@ -482,7 +490,7 @@ impl AppModel {
     }
 
     /// Evaluate the current input and update the result and history
-    pub fn evaluate_input(&mut self) {
+    pub fn evaluate_input(&mut self) -> Task<cosmic::Action<Message>> {
         let expression = self
             .input
             .replace('×', "*")
@@ -493,9 +501,14 @@ impl AppModel {
                 self.result = result.value();
                 self.history.push((self.input.clone(), self.result.clone()));
                 self.input.clear();
+                cosmic::iced::widget::scrollable::snap_to(
+                    Id::new(HISTORY_ID),
+                    cosmic::iced::widget::scrollable::RelativeOffset::END,
+                )
             }
             Err(err) => {
                 self.result = format!("Error: {}", err);
+                Task::none()
             }
         }
     }
