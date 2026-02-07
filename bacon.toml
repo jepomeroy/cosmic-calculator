@@ -1,0 +1,17 @@
+default_job = "test"
+
+[jobs.test]
+command = ["cargo", "test", "--color", "always"]
+need_stdout = true
+
+[jobs.build]
+command = ["cargo", "build", "--color", "always"]
+
+[jobs.lint]
+command = ["cargo", "clippy", "--color", "always", "--all-targets", "--all-features", "--", "-D", "warnings"]
+
+[jobs.run]
+command = ["cargo", "run", "--color", "always"]
+need_stdout = true
+allow_warnings = true
+on_change_strategy = "kill_then_restart"

@@ -2,16 +2,20 @@
 
 use crate::config::Config;
 use crate::fl;
+use calclib::evaluator::evaluate;
+use calclib::validator::validate;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
 use cosmic::iced::{Alignment, Length, Padding};
 use cosmic::prelude::*;
-use cosmic::widget::{self, about::About, icon, menu, nav_bar, text_editor};
+use cosmic::widget::{self, Id, about::About, button, icon, menu, nav_bar, text, text_input};
 use std::collections::HashMap;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
+const INPUT_ID: &str = "calculator-input";
+const HISTORY_ID: &str = "history-scrollable";
 
 /// The application model stores app-specific state used to describe its interface and
 /// drive its logic.
@@ -28,14 +32,22 @@ pub struct AppModel {
     key_binds: HashMap<menu::KeyBind, MenuAction>,
     /// Configuration data that persists between application runs.
     config: Config,
+    /// Handle to the config context for persisting changes.
+    config_handler: Option<cosmic_config::Config>,
+    /// Calculator history (expression, result) pairs
+    history: Vec<(String, String)>,
     /// Calculator input
-    content: text_editor::Content,
+    input: String,
+    /// Calculator result
+    result: String,
 }
 
 /// Messages emitted by the application and its widgets.
 #[derive(Debug, Clone)]
 pub enum Message {
-    ActionPerformed(text_editor::Action),
+    InputChanged(String),
+    KeyPressed(String),
+    CopyResultToInput(String),
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
     UpdateConfig(Config),
@@ -97,6 +109,31 @@ impl cosmic::Application for AppModel {
             .links([(fl!("repository"), REPOSITORY)])
             .license(env!("CARGO_PKG_LICENSE"));
 
+        // Load configuration from disk.
+        let (config, config_handler) =
+            match cosmic_config::Config::new(Self::APP_ID, Config::VERSION) {
+                Ok(context) => {
+                    let config = match Config::get_entry(&context) {
+                        Ok(config) => config,
+                        Err((_errors, config)) => config,
+                    };
+                    (config, Some(context))
+                }
+                Err(_) => (Config::default(), None),
+            };
+
+        // Activate the saved page from config.
+        if let Some(page) = Page::from_str(&config.page) {
+            let target = nav.iter().find(|&id| {
+                nav.data::<Page>(id)
+                    .map(|data| std::mem::discriminant(data) == std::mem::discriminant(&page))
+                    .unwrap_or(false)
+            });
+            if let Some(id) = target {
+                nav.activate(id);
+            }
+        }
+
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
             core,
@@ -104,20 +141,11 @@ impl cosmic::Application for AppModel {
             about,
             nav,
             key_binds: HashMap::new(),
-            // Optional configuration file for an application.
-            config: cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
-                .map(|context| match Config::get_entry(&context) {
-                    Ok(config) => config,
-                    Err((_errors, config)) => {
-                        // for why in errors {
-                        //     tracing::error!(%why, "error loading app config");
-                        // }
-
-                        config
-                    }
-                })
-                .unwrap_or_default(),
-            content: text_editor::Content::default(),
+            config,
+            config_handler,
+            history: Vec::new(),
+            input: "".to_string(),
+            result: "0".to_string(),
         };
 
         // Create a startup command that sets the window title.
@@ -165,26 +193,126 @@ impl cosmic::Application for AppModel {
     /// events received by widgets will be passed to the update method.
     fn view(&self) -> Element<'_, Self::Message> {
         let space_s = cosmic::theme::spacing().space_s;
-        let content: Element<_> = match self.nav.active_data::<Page>().unwrap() {
-            Page::Basic => {
-                let header = widget::row::with_capacity(1)
-                    .push(
-                        text_editor(&self.content)
-                            .on_action(Message::ActionPerformed)
-                            .wrapping(cosmic::iced_core::text::Wrapping::Word)
-                            .height(Length::Fixed(120.0))
-                            .padding(Padding::new(20.0)),
-                    )
-                    .align_y(Alignment::End)
-                    .spacing(space_s);
 
-                widget::column::with_capacity(2)
-                    .push(header)
-                    // .push(section)
-                    .spacing(space_s)
-                    .height(Length::Fill)
+        // Build history list from entries
+        let history_items: Vec<Element<'_, Self::Message>> = self
+            .history
+            .iter()
+            .map(|(expr, result)| {
+                widget::row::with_capacity(2)
+                    .push(
+                        text(format!("{} = {}", expr, result))
+                            .size(14)
+                            .width(Length::Fill)
+                            .align_x(Horizontal::Right),
+                    )
+                    .push(widget::tooltip(
+                        button::icon(icon::from_name("edit-copy-symbolic").size(14))
+                            .extra_small()
+                            .on_press(Message::CopyResultToInput(result.clone())),
+                        text("Copy to input"),
+                        widget::tooltip::Position::Left,
+                    ))
+                    .align_y(Alignment::Center)
+                    .spacing(8)
                     .into()
-            }
+            })
+            .collect();
+
+        let history_column = widget::column::with_children(history_items)
+            .spacing(4)
+            .width(Length::Fill);
+
+        let history = widget::container(
+            widget::scrollable(history_column)
+                .id(Id::new(HISTORY_ID))
+                .height(Length::Fill),
+        )
+            .height(Length::Fixed(120.0))
+            .width(Length::Fill)
+            .padding(Padding::new(8.0))
+            .class(cosmic::theme::Container::Card);
+
+        let input = widget::row::with_capacity(1)
+            .push(
+                text_input("", &self.input)
+                    .id(Id::new(INPUT_ID))
+                    .on_input(Message::InputChanged)
+                    .on_submit(|_| Message::KeyPressed("=".to_string()))
+                    .always_active()
+                    .size(24)
+                    .padding(Padding::new(20.0)),
+            )
+            .align_y(Alignment::End)
+            .spacing(space_s);
+
+        let basic_keyboard: Element<_> = widget::column::with_capacity(1)
+            .push(
+                widget::row::with_capacity(5)
+                    .push(make_button("AC", None))
+                    .push(make_button("C", None))
+                    .push(make_button("±", None))
+                    .push(make_button("%", None))
+                    .push(make_button("⌫", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(5)
+                    .push(make_button("7", None))
+                    .push(make_button("8", None))
+                    .push(make_button("9", None))
+                    .push(make_button("÷", None))
+                    .push(make_button("(", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(5)
+                    .push(make_button("4", None))
+                    .push(make_button("5", None))
+                    .push(make_button("6", None))
+                    .push(make_button("×", None))
+                    .push(make_button(")", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(4)
+                    .push(make_button("1", None))
+                    .push(make_button("2", None))
+                    .push(make_button("3", None))
+                    .push(make_button("−", None))
+                    .push(make_button("!", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(4)
+                    .push(make_button("0", None))
+                    .push(make_button(".", None))
+                    .push(make_button("=", None))
+                    .push(make_button("+", None))
+                    .spacing(space_s),
+            )
+            .spacing(space_s)
+            .into();
+
+        let result = widget::row::with_capacity(1)
+            .push(
+                text(self.result.as_str())
+                    .size(24)
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Right),
+            )
+            .align_y(Alignment::End)
+            .spacing(space_s);
+
+        let content: Element<_> = match self.nav.active_data::<Page>().unwrap() {
+            Page::Basic => widget::column::with_capacity(3)
+                .push(history)
+                .push(input)
+                .push(result)
+                .push(basic_keyboard)
+                .spacing(space_s)
+                .height(Length::Fill)
+                .into(),
 
             Page::Advanced => {
                 let header = widget::row::with_capacity(2)
@@ -229,10 +357,57 @@ impl cosmic::Application for AppModel {
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::ActionPerformed(action) => {
-                // Handle action performed in the text editor.
-                println!("Action performed: {:?}", action);
-                self.content.perform(action);
+            Message::InputChanged(value) => {
+                println!("input changed: {}", value);
+
+                if value.chars().any(|c| c == '=' || c == '\n') {
+                    return self.evaluate_input();
+                }
+
+                if value.chars().all(|c| validate(&c)) {
+                    self.input = substitute(value);
+                }
+            }
+            Message::CopyResultToInput(result) => {
+                self.input.push_str(&result);
+                return text_input::move_cursor_to_end(Id::new(INPUT_ID));
+            }
+            Message::KeyPressed(value) => {
+                println!("key pressed: {}", value);
+
+                match value.as_str() {
+                    "AC" => {
+                        self.history.clear();
+                        self.input.clear();
+                        self.result = "0".to_string();
+                    }
+                    "C" => {
+                        self.input.clear();
+                        self.result = "0".to_string();
+                    }
+                    "⌫" => {
+                        self.input.pop();
+                    }
+                    "±" => {
+                        if self.input.starts_with('-') {
+                            self.input.remove(0);
+                        } else {
+                            self.input.insert(0, '-');
+                        }
+                    }
+                    "=" => {
+                        let scroll_task = self.evaluate_input();
+                        return Task::batch([
+                            scroll_task,
+                            text_input::move_cursor_to_end(Id::new(INPUT_ID)),
+                        ]);
+                    }
+                    _ => {
+                        self.input.push_str(&value);
+                    }
+                }
+
+                return text_input::move_cursor_to_end(Id::new(INPUT_ID));
             }
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
@@ -244,11 +419,10 @@ impl cosmic::Application for AppModel {
                     self.core.window.show_context = true;
                 }
             }
-
             Message::UpdateConfig(config) => {
+                println!("updating config: {:?}", config);
                 self.config = config;
             }
-
             Message::LaunchUrl(url) => match open::that_detached(&url) {
                 Ok(()) => {}
                 Err(err) => {
@@ -264,8 +438,38 @@ impl cosmic::Application for AppModel {
         // Activate the page in the model.
         self.nav.activate(id);
 
+        // Persist the selected page to config.
+        if let Some(page) = self.nav.active_data::<Page>() {
+            self.config.page = page.as_str().to_string();
+            if let Some(ref handler) = self.config_handler {
+                let _ = self.config.write_entry(handler);
+            }
+        }
+
         self.update_title()
     }
+}
+/// Substitute certain characters with their calc lib equivalents
+fn substitute(input: String) -> String {
+    input.replace('*', "×").replace('/', "÷").replace('-', "−")
+}
+
+fn make_button(label: &str, handler: Option<Message>) -> Element<'_, Message> {
+    let text_handler = handler.unwrap_or(Message::KeyPressed(label.to_string()));
+
+    button::custom(
+        text(label)
+            .size(20)
+            .font(cosmic::font::bold())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Center),
+    )
+    .width(60)
+    .height(40)
+    .on_press(text_handler)
+    .into()
 }
 
 impl AppModel {
@@ -284,6 +488,30 @@ impl AppModel {
             Task::none()
         }
     }
+
+    /// Evaluate the current input and update the result and history
+    pub fn evaluate_input(&mut self) -> Task<cosmic::Action<Message>> {
+        let expression = self
+            .input
+            .replace('×', "*")
+            .replace('÷', "/")
+            .replace('−', "-");
+        match evaluate(expression) {
+            Ok(result) => {
+                self.result = result.value();
+                self.history.push((self.input.clone(), self.result.clone()));
+                self.input.clear();
+                cosmic::iced::widget::scrollable::snap_to(
+                    Id::new(HISTORY_ID),
+                    cosmic::iced::widget::scrollable::RelativeOffset::END,
+                )
+            }
+            Err(err) => {
+                self.result = format!("Error: {}", err);
+                Task::none()
+            }
+        }
+    }
 }
 
 /// The page to display in the application.
@@ -291,6 +519,25 @@ pub enum Page {
     Basic,
     Advanced,
     Developer,
+}
+
+impl Page {
+    fn as_str(&self) -> &str {
+        match self {
+            Page::Basic => "basic",
+            Page::Advanced => "advanced",
+            Page::Developer => "developer",
+        }
+    }
+
+    fn from_str(s: &str) -> Option<Page> {
+        match s {
+            "basic" => Some(Page::Basic),
+            "advanced" => Some(Page::Advanced),
+            "developer" => Some(Page::Developer),
+            _ => None,
+        }
+    }
 }
 
 /// The context page to display in the context drawer.
@@ -314,3 +561,4 @@ impl menu::action::MenuAction for MenuAction {
         }
     }
 }
+

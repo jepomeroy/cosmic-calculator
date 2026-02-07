@@ -1,0 +1,5 @@
+default_job = "test"
+
+[jobs.test]
+command = ["cargo", "test", "--color", "always", "--", "--show-output"]
+need_stdout = true
