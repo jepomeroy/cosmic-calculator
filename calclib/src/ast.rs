@@ -14,11 +14,8 @@ pub(crate) enum Expression {
         operator: Token,
         right: Box<Expression>,
     },
-    Grouped {
+    Unary {
+        operator: Token,
         expression: Box<Expression>,
     },
-}
-
-fn prefix_expression() -> Expression {
-    todo!()
 }

@@ -27,7 +27,7 @@ impl Token {
         match self {
             Token::Eof => EOF,
             Token::Plus | Token::Minus => ADD,
-            Token::Multiply | Token::Divide | Token::Percent => MULTIPLY,
+            Token::Multiply | Token::Divide | Token::Percent | Token::Exclamation => MULTIPLY,
             Token::Caret => EXPONENT,
             Token::LParen => PARENTHETICAL,
             _ => LOWEST,

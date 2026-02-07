@@ -1,4 +1,4 @@
-use crate::ast::Expression::{Grouped, Infix, Integer, Prefix};
+use crate::ast::Expression::{Infix, Integer, Prefix, Unary};
 use crate::parser::Parser;
 
 pub struct EvaluationResult {
@@ -106,9 +106,43 @@ fn evaluate_expression(expression: crate::ast::Expression) -> Result<EvaluationR
                 Err("Type mismatch: expected integers".to_string())
             }
         }
+        Unary {
+            operator,
+            expression,
+        } => {
+            let expr_val = evaluate_expression(*expression)?;
 
-        _ => Err("Unsupported expression type".to_string()),
+            if expr_val.is_int() {
+                let expr_int = expr_val.int_value.unwrap();
+
+                match operator {
+                    crate::token::Token::Exclamation => match factorial(expr_int) {
+                        Ok(result) => Ok(EvaluationResult {
+                            float_value: None,
+                            int_value: Some(result),
+                        }),
+                        Err(_) => Err("Failed to compute factorial".to_string()),
+                    },
+                    _ => Err("Unsupported operator".to_string()),
+                }
+            } else {
+                Err("Type mismatch: expected integers".to_string())
+            }
+        }
     }
+}
+
+/// Computes the factorial of a non-negative integer n.
+/// Returns Ok(result) if successful, or Err(()) if n is negative.
+/// Note: This implementation does not handle overflow and is suitable for small values of n.
+fn factorial(n: i64) -> Result<i64, ()> {
+    let mut r = 1;
+
+    for i in 2..n + 1 {
+        r *= i;
+    }
+
+    return Ok(r);
 }
 
 #[cfg(test)]
@@ -174,6 +208,24 @@ mod tests {
         let eval_result = result.unwrap();
         assert!(eval_result.is_int());
         assert_eq!(eval_result.int_value, Some(14));
+    }
+
+    #[test]
+    // #[ignore = "Not implemented yet"]
+    fn test_evaluate_factoriacl_expressions() {
+        let result = evaluate("5!".to_string());
+        assert!(result.is_ok());
+        let eval_result = result.unwrap();
+        assert!(eval_result.is_int());
+        assert_eq!(eval_result.int_value, Some(120));
+    }
+
+    #[test]
+    fn test_evaluate_factorial_function_of_zero() {
+        let result = factorial(0);
+        assert!(result.is_ok());
+        let eval_result = result.unwrap();
+        assert_eq!(eval_result, 1);
     }
 
     #[test]

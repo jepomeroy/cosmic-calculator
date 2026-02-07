@@ -95,6 +95,15 @@ impl Parser {
         })
     }
 
+    fn parse_unary(&mut self, left: Option<Expression>) -> Option<Expression> {
+        let op = self.curr_token?;
+
+        Some(Expression::Unary {
+            operator: op,
+            expression: Box::new(left?),
+        })
+    }
+
     fn parse_expression(&mut self, precedense: u8) -> Option<Expression> {
         let mut left = match &self.curr_token {
             Some(Token::Eof) => return None,
@@ -117,12 +126,16 @@ impl Parser {
         while precedense < self.peek_precedence() {
             self.next_token();
 
-            if self.curr_token == Some(Token::Eof) {
-                self.found_eof = true;
-                break;
+            match &self.curr_token {
+                Some(Token::Eof) => {
+                    self.found_eof = true;
+                    break;
+                }
+                Some(Token::Exclamation) => {
+                    left = self.parse_unary(left);
+                }
+                _ => left = self.parse_infix(left),
             };
-
-            left = self.parse_infix(left)
         }
 
         left
