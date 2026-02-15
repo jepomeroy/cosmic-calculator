@@ -1,26 +1,60 @@
 # Cosmic Calculator
 
-Cosmic Desktop Calculator
+A calculator application for the [COSMIC][cosmic] desktop environment, built with [libcosmic][libcosmic] and Rust.
+
+## Features
+
+- **Basic mode** — standard arithmetic with a button-grid UI: addition, subtraction, multiplication, division, parentheses, sign toggle, and percentage
+- **Factorial** — integer and floating-point factorial via the `!` operator, with gamma function support for non-integers
+- **Expression history** — scrollable list of past calculations with copy-to-input support
+- **Keyboard input** — type expressions directly or use the on-screen buttons
+- **Advanced and Developer modes** — placeholder pages for future functionality
+
+### Architecture
+
+The project is split into two crates:
+
+| Crate | Purpose |
+|---|---|
+| `cosmic-calculator` (root) | COSMIC/Iced GUI application |
+| `calclib` | Standalone expression engine — lexer, parser, AST, and evaluator with no GUI dependencies |
+
+## Building
+
+Requires a Rust toolchain (install via [rustup][rustup]). A [justfile](./justfile) is provided for the [just][just] command runner:
+
+| Command | Description |
+|---|---|
+| `just` | Build the release binary (default recipe) |
+| `just run` | Build and run the application |
+| `just build-debug` | Build with the debug profile |
+| `just check` | Run clippy with pedantic warnings |
+| `just check-json` | Clippy with JSON output for IDE/LSP integration |
+| `just test-watch` | Continuously run `calclib` unit tests with [bacon][bacon] |
+| `just clean` | Run `cargo clean` |
 
 ## Installation
 
-A [justfile](./justfile) is included by default for the [casey/just][just] command runner.
+```sh
+just build-release
+just install
+```
 
-- `just` builds the application with the default `just build-release` recipe
-- `just run` builds and runs the application
-- `just install` installs the project into the system
-- `just vendor` creates a vendored tarball
-- `just build-vendored` compiles with vendored dependencies from that tarball
-- `just check` runs clippy on the project to check for linter warnings
-- `just check-json` can be used by IDEs that support LSP
+Override paths with `rootdir` and `prefix`:
 
-## Translators
+```sh
+just rootdir=/tmp/staging prefix=/usr install
+```
 
-[Fluent][fluent] is used for localization of the software. Fluent's translation files are found in the [i18n directory](./i18n). New translations may copy the [English (en) localization](./i18n/en) of the project, rename `en` to the desired [ISO 639-1 language code][iso-codes], and then translations can be provided for each [message identifier][fluent-guide]. If no translation is necessary, the message may be omitted.
+To uninstall:
+
+```sh
+just uninstall
+```
 
 ## Packaging
 
-If packaging for a Linux distribution, vendor dependencies locally with the `vendor` rule, and build with the vendored sources using the `build-vendored` rule. When installing files, use the `rootdir` and `prefix` variables to change installation paths.
+For distribution packaging, vendor dependencies and build offline:
 
 ```sh
 just vendor
@@ -28,17 +62,42 @@ just build-vendored
 just rootdir=debian/cosmic-calculator prefix=/usr install
 ```
 
-It is recommended to build a source tarball with the vendored dependencies, which can typically be done by running `just vendor` on the host system before it enters the build environment.
+It is recommended to create the vendored tarball on the host system before entering a sandboxed build environment.
 
-## Developers
+## Translators
 
-Developers should install [rustup][rustup] and configure their editor to use [rust-analyzer][rust-analyzer]. To improve compilation times, disable LTO in the release profile, install the [mold][mold] linker, and configure [sccache][sccache] for use with Rust. The [mold][mold] linker will only improve link times if LTO is disabled.
+[Fluent][fluent] is used for localization. Translation files live in the [i18n directory](./i18n). To add a new language:
 
+1. Copy the [English (en) localization](./i18n/en) directory
+2. Rename it to the target [ISO 639-1 language code][iso-codes]
+3. Translate each [message identifier][fluent-guide] (messages without a translation can be omitted)
+
+## Development
+
+Install [rustup][rustup] and configure your editor with [rust-analyzer][rust-analyzer]. Optional speed-ups:
+
+- Disable LTO in the release profile
+- Install the [mold][mold] linker (only benefits builds with LTO disabled)
+- Use [sccache][sccache] for compilation caching
+
+Run the `calclib` tests:
+
+```sh
+cargo test -p calclib
+```
+
+## License
+
+[MIT](./LICENSE)
+
+[bacon]: https://github.com/Canop/bacon
+[cosmic]: https://system76.com/cosmic
 [fluent]: https://projectfluent.org/
 [fluent-guide]: https://projectfluent.org/fluent/guide/hello.html
 [iso-codes]: https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes
 [just]: https://github.com/casey/just
-[rustup]: https://rustup.rs/
-[rust-analyzer]: https://rust-analyzer.github.io/
+[libcosmic]: https://github.com/pop-os/libcosmic
 [mold]: https://github.com/rui314/mold
+[rust-analyzer]: https://rust-analyzer.github.io/
+[rustup]: https://rustup.rs/
 [sccache]: https://github.com/mozilla/sccache

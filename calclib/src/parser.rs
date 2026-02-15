@@ -119,7 +119,7 @@ impl Parser {
 
                 expr
             }
-            Some(Token::Number(value)) => Some(Expression::Integer { value: *value }),
+            Some(Token::Number(value)) => Some(Expression::Number { value: *value }),
             _ => return None,
         };
 
@@ -172,18 +172,23 @@ mod tests {
 
     #[test]
     fn test_simple_literals() {
-        let input = vec![("5", 5), ("42", 42), ("0", 0), ("1234567890", 1234567890)];
+        let input = vec![
+            ("5", 5.0),
+            ("42", 42.0),
+            ("0", 0.0),
+            ("1234567890", 1234567890.0),
+        ];
         let mut p = Parser::new();
         for expr in input {
             let result = p.parse(expr.0.to_string());
 
-            assert_eq!(result, Ok(Some(Expression::Integer { value: expr.1 })));
+            assert_eq!(result, Ok(Some(Expression::Number { value: expr.1 })));
         }
     }
 
     #[test]
     fn test_simple_negative_literals() {
-        let input = vec![("-5", 5), ("-42", 42), ("-1234567890", 1234567890)];
+        let input = vec![("-5", 5.0), ("-42", 42.0), ("-1234567890", 1234567890.0)];
         let mut p = Parser::new();
         for expr in input {
             let result = p.parse(expr.0.to_string());
@@ -194,7 +199,7 @@ mod tests {
                 result,
                 Ok(Some(Expression::Prefix {
                     operator: Token::Minus,
-                    right: Box::new(Expression::Integer { value: expr.1 })
+                    right: Box::new(Expression::Number { value: expr.1 })
                 }))
             );
         }
@@ -216,33 +221,34 @@ mod tests {
             (
                 "15+3",
                 Ok(Some(Expression::Infix {
-                    left: Box::new(Expression::Integer { value: 15 }),
+                    left: Box::new(Expression::Number { value: 15.0 }),
+
                     operator: Token::Plus,
-                    right: Box::new(Expression::Integer { value: 3 }),
+                    right: Box::new(Expression::Number { value: 3.0 }),
                 })),
             ),
             (
                 "15-3",
                 Ok(Some(Expression::Infix {
-                    left: Box::new(Expression::Integer { value: 15 }),
+                    left: Box::new(Expression::Number { value: 15.0 }),
                     operator: Token::Minus,
-                    right: Box::new(Expression::Integer { value: 3 }),
+                    right: Box::new(Expression::Number { value: 3.0 }),
                 })),
             ),
             (
                 "15*3",
                 Ok(Some(Expression::Infix {
-                    left: Box::new(Expression::Integer { value: 15 }),
+                    left: Box::new(Expression::Number { value: 15.0 }),
                     operator: Token::Multiply,
-                    right: Box::new(Expression::Integer { value: 3 }),
+                    right: Box::new(Expression::Number { value: 3.0 }),
                 })),
             ),
             (
                 "15/3",
                 Ok(Some(Expression::Infix {
-                    left: Box::new(Expression::Integer { value: 15 }),
+                    left: Box::new(Expression::Number { value: 15.0 }),
                     operator: Token::Divide,
-                    right: Box::new(Expression::Integer { value: 3 }),
+                    right: Box::new(Expression::Number { value: 3.0 }),
                 })),
             ),
         ];
@@ -260,24 +266,25 @@ mod tests {
             (
                 "5*(3-1)",
                 Ok(Some(Expression::Infix {
-                    left: Box::new(Expression::Integer { value: 5 }),
+                    left: Box::new(Expression::Number { value: 5.0 }),
                     operator: Token::Multiply,
                     right: Box::new(Expression::Infix {
-                        left: Box::new(Expression::Integer { value: 3 }),
+                        left: Box::new(Expression::Number { value: 3.0 }),
+
                         operator: Token::Minus,
-                        right: Box::new(Expression::Integer { value: 1 }),
+                        right: Box::new(Expression::Number { value: 1.0 }),
                     }),
                 })),
             ),
             (
                 "5(3-1)",
                 Ok(Some(Expression::Infix {
-                    left: Box::new(Expression::Integer { value: 5 }),
+                    left: Box::new(Expression::Number { value: 5.0 }),
                     operator: Token::Multiply,
                     right: Box::new(Expression::Infix {
-                        left: Box::new(Expression::Integer { value: 3 }),
+                        left: Box::new(Expression::Number { value: 3.0 }),
                         operator: Token::Minus,
-                        right: Box::new(Expression::Integer { value: 1 }),
+                        right: Box::new(Expression::Number { value: 1.0 }),
                     }),
                 })),
             ),
@@ -285,38 +292,38 @@ mod tests {
                 "5*(3-1*4+8)/2",
                 Ok(Some(Expression::Infix {
                     left: Box::new(Expression::Infix {
-                        left: Box::new(Expression::Integer { value: 5 }),
+                        left: Box::new(Expression::Number { value: 5.0 }),
                         operator: Token::Multiply,
                         right: Box::new(Expression::Infix {
                             left: Box::new(Expression::Infix {
-                                left: Box::new(Expression::Integer { value: 3 }),
+                                left: Box::new(Expression::Number { value: 3.0 }),
                                 operator: Token::Minus,
                                 right: Box::new(Expression::Infix {
-                                    left: Box::new(Expression::Integer { value: 1 }),
+                                    left: Box::new(Expression::Number { value: 1.0 }),
                                     operator: Token::Multiply,
-                                    right: Box::new(Expression::Integer { value: 4 }),
+                                    right: Box::new(Expression::Number { value: 4.0 }),
                                 }),
                             }),
                             operator: Token::Plus,
-                            right: Box::new(Expression::Integer { value: 8 }),
+                            right: Box::new(Expression::Number { value: 8.0 }),
                         }),
                     }),
                     operator: Token::Divide,
-                    right: Box::new(Expression::Integer { value: 2 }),
+                    right: Box::new(Expression::Number { value: 2.0 }),
                 })),
             ),
             (
                 "42-7*(2+3)",
                 Ok(Some(Expression::Infix {
-                    left: Box::new(Expression::Integer { value: 42 }),
+                    left: Box::new(Expression::Number { value: 42.0 }),
                     operator: Token::Minus,
                     right: Box::new(Expression::Infix {
-                        left: Box::new(Expression::Integer { value: 7 }),
+                        left: Box::new(Expression::Number { value: 7.0 }),
                         operator: Token::Multiply,
                         right: Box::new(Expression::Infix {
-                            left: Box::new(Expression::Integer { value: 2 }),
+                            left: Box::new(Expression::Number { value: 2.0 }),
                             operator: Token::Plus,
-                            right: Box::new(Expression::Integer { value: 3 }),
+                            right: Box::new(Expression::Number { value: 3.0 }),
                         }),
                     }),
                 })),

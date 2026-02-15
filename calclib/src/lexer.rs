@@ -1,5 +1,5 @@
 use crate::token::Token;
-use std::num::ParseIntError;
+use std::num::ParseFloatError;
 
 pub(crate) struct Lexer {
     input: String,
@@ -32,9 +32,8 @@ impl Lexer {
             '÷' => Ok(Token::Divide),
             '^' => Ok(Token::Caret),
             '%' => Ok(Token::Percent),
-            '.' => Ok(Token::Period),
             '!' => Ok(Token::Exclamation),
-            '0'..='9' => {
+            '.' | '0'..='9' => {
                 let num = self.read_number();
 
                 match num {
@@ -65,6 +64,14 @@ impl Lexer {
         false
     }
 
+    fn peek_is_dot(&self) -> bool {
+        if self.read_position < self.input.len() {
+            return self.input.as_bytes()[self.read_position] == b'.';
+        }
+
+        false
+    }
+
     fn read_char(&mut self) {
         if self.read_position >= self.input.len() {
             self.ch = None;
@@ -76,10 +83,10 @@ impl Lexer {
         self.read_position += 1;
     }
 
-    fn read_number(&mut self) -> Result<i64, ParseIntError> {
+    fn read_number(&mut self) -> Result<f64, ParseFloatError> {
         let position = self.position;
         while self.ch.is_some() {
-            if self.peek_is_digit() {
+            if self.peek_is_digit() || self.peek_is_dot() {
                 self.read_char();
             } else {
                 break;
@@ -88,7 +95,7 @@ impl Lexer {
 
         let s = self.input[position..self.position + 1].to_string();
 
-        s.parse::<i64>()
+        s.parse::<f64>()
     }
 }
 
@@ -108,14 +115,14 @@ mod tests {
         for i in input {
             let mut l = Lexer::new(i.0.to_string());
             let token = l.next_token().unwrap();
-            let expected_value = i.1 as i64;
+            let expected_value = i.1 as f64;
             assert_eq!(token, Token::Number(expected_value));
         }
     }
 
     #[test]
     fn test_lexer_operators() {
-        let input = "+-*/()%^!.";
+        let input = "+-*/()%^!";
         let mut l = Lexer::new(input.to_string());
 
         let expected_tokens = vec![
@@ -128,7 +135,6 @@ mod tests {
             Token::Percent,
             Token::Caret,
             Token::Exclamation,
-            Token::Period,
         ];
 
         for expected in expected_tokens {
