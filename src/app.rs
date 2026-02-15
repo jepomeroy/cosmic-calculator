@@ -228,10 +228,10 @@ impl cosmic::Application for AppModel {
                 .id(Id::new(HISTORY_ID))
                 .height(Length::Fill),
         )
-            .height(Length::Fixed(120.0))
-            .width(Length::Fill)
-            .padding(Padding::new(8.0))
-            .class(cosmic::theme::Container::Card);
+        .height(Length::Fixed(120.0))
+        .width(Length::Fill)
+        .padding(Padding::new(8.0))
+        .class(cosmic::theme::Container::Card);
 
         let input = widget::row::with_capacity(1)
             .push(
@@ -507,7 +507,7 @@ impl AppModel {
                 )
             }
             Err(err) => {
-                self.result = format!("Error: {}", err);
+                self.result = format!("{}", err);
                 Task::none()
             }
         }
@@ -561,4 +561,3 @@ impl menu::action::MenuAction for MenuAction {
         }
     }
 }
-

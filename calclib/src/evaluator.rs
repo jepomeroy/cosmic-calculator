@@ -1,27 +1,33 @@
-use crate::ast::Expression::{Infix, Integer, Prefix, Unary};
+use crate::ast::Expression::{Infix, Number, Prefix, Unary};
 use crate::parser::Parser;
+use crate::utils::{change_sign, is_integer, is_negative};
+use statrs::function::{factorial, gamma::gamma};
 
 pub struct EvaluationResult {
-    pub float_value: Option<f64>,
-    pub int_value: Option<i64>,
+    value: Option<f64>,
 }
 
 impl EvaluationResult {
-    pub fn is_float(&self) -> bool {
-        self.float_value.is_some()
-    }
-
-    pub fn is_int(&self) -> bool {
-        self.int_value.is_some()
+    pub fn int_value(&self) -> Option<i64> {
+        if is_integer(self.value) && self.value.map_or(false, |f| f.abs() <= i64::MAX as f64) {
+            return self.value.map(|f| f.trunc() as i64);
+        }
+        None
     }
 
     pub fn value(&self) -> String {
-        if let Some(f) = self.float_value {
-            format!("{}", f)
-        } else if let Some(i) = self.int_value {
-            format!("{}", i)
+        if let Some(f) = self.value {
+            if is_integer(self.value) {
+                if f.abs() <= i64::MAX as f64 {
+                    return format!("{}", f.trunc() as i64);
+                } else {
+                    return format!("{:e}", f);
+                }
+            } else {
+                return format!("{}", f);
+            }
         } else {
-            "No value".to_string()
+            "NaN".to_string()
         }
     }
 }
@@ -36,7 +42,7 @@ pub fn evaluate(input: String) -> Result<EvaluationResult, String> {
             // println!("Parser output: {:?}", v);
             match v {
                 Some(ex) => evaluate_expression(ex),
-                None => Err("No expression to evaluate".to_string()),
+                None => Err("Invalid expression".to_string()),
             }
         }
     }
@@ -44,10 +50,7 @@ pub fn evaluate(input: String) -> Result<EvaluationResult, String> {
 
 fn evaluate_expression(expression: crate::ast::Expression) -> Result<EvaluationResult, String> {
     match expression {
-        Integer { value } => Ok(EvaluationResult {
-            float_value: None,
-            int_value: Some(value),
-        }),
+        Number { value } => Ok(EvaluationResult { value: Some(value) }),
         Infix {
             left,
             operator,
@@ -56,54 +59,41 @@ fn evaluate_expression(expression: crate::ast::Expression) -> Result<EvaluationR
             let left_val = evaluate_expression(*left)?;
             let right_val = evaluate_expression(*right)?;
 
-            if left_val.is_int() && right_val.is_int() {
-                let left_int = left_val.int_value.unwrap();
-                let right_int = right_val.int_value.unwrap();
+            let left_num = left_val.value.unwrap();
+            let right_num = right_val.value.unwrap();
 
-                match operator {
-                    crate::token::Token::Plus => Ok(EvaluationResult {
-                        float_value: None,
-                        int_value: Some(left_int + right_int),
-                    }),
-                    crate::token::Token::Minus => Ok(EvaluationResult {
-                        float_value: None,
-                        int_value: Some(left_int - right_int),
-                    }),
-                    crate::token::Token::Multiply => Ok(EvaluationResult {
-                        float_value: None,
-                        int_value: Some(left_int * right_int),
-                    }),
-                    crate::token::Token::Divide => {
-                        if right_int == 0 {
-                            Err("Division by zero".to_string())
-                        } else {
-                            Ok(EvaluationResult {
-                                float_value: None,
-                                int_value: Some(left_int / right_int),
-                            })
-                        }
+            match operator {
+                crate::token::Token::Plus => Ok(EvaluationResult {
+                    value: Some(left_num + right_num),
+                }),
+                crate::token::Token::Minus => Ok(EvaluationResult {
+                    value: Some(left_num - right_num),
+                }),
+                crate::token::Token::Multiply => Ok(EvaluationResult {
+                    value: Some(left_num * right_num),
+                }),
+                crate::token::Token::Divide => {
+                    if right_num == 0.0 {
+                        Err("Division by zero".to_string())
+                    } else {
+                        Ok(EvaluationResult {
+                            value: Some(left_num / right_num),
+                        })
                     }
-                    _ => Err("Unsupported operator".to_string()),
                 }
-            } else {
-                Err("Type mismatch: expected integers".to_string())
+                _ => Err("Unsupported operator".to_string()),
             }
         }
         Prefix { operator, right } => {
             let right_val = evaluate_expression(*right)?;
 
-            if right_val.is_int() {
-                let right_int = right_val.int_value.unwrap();
+            let right_num = right_val.value.unwrap();
 
-                match operator {
-                    crate::token::Token::Minus => Ok(EvaluationResult {
-                        float_value: None,
-                        int_value: Some(-right_int),
-                    }),
-                    _ => Err("Unsupported operator".to_string()),
-                }
-            } else {
-                Err("Type mismatch: expected integers".to_string())
+            match operator {
+                crate::token::Token::Minus => Ok(EvaluationResult {
+                    value: Some(-right_num),
+                }),
+                _ => Err("Unsupported operator".to_string()),
             }
         }
         Unary {
@@ -112,37 +102,42 @@ fn evaluate_expression(expression: crate::ast::Expression) -> Result<EvaluationR
         } => {
             let expr_val = evaluate_expression(*expression)?;
 
-            if expr_val.is_int() {
-                let expr_int = expr_val.int_value.unwrap();
+            let expr_num = expr_val.value;
 
-                match operator {
-                    crate::token::Token::Exclamation => match factorial(expr_int) {
-                        Ok(result) => Ok(EvaluationResult {
-                            float_value: None,
-                            int_value: Some(result),
-                        }),
-                        Err(_) => Err("Failed to compute factorial".to_string()),
-                    },
-                    _ => Err("Unsupported operator".to_string()),
-                }
-            } else {
-                Err("Type mismatch: expected integers".to_string())
+            match operator {
+                crate::token::Token::Exclamation => match calc_factorial(expr_num) {
+                    Ok(result) => Ok(EvaluationResult {
+                        value: Some(result),
+                    }),
+                    Err(_) => Err("Failed to compute factorial".to_string()),
+                },
+                _ => Err("Unsupported operator".to_string()),
             }
         }
     }
 }
 
 /// Computes the factorial of a non-negative integer n.
-/// Returns Ok(result) if successful, or Err(()) if n is negative.
-/// Note: This implementation does not handle overflow and is suitable for small values of n.
-fn factorial(n: i64) -> Result<i64, ()> {
-    let mut r = 1;
-
-    for i in 2..n + 1 {
-        r *= i;
+fn calc_factorial(n: Option<f64>) -> Result<f64, ()> {
+    if n.is_none() {
+        return Err(());
     }
 
-    return Ok(r);
+    // if it is negative, I want to flip the sign, compute the factorial, and then flip the sign
+    // back at the end. This is because the factorial of a negative number is not defined, but we
+    // can use the gamma function to compute it for negative numbers as well.
+    let neg = is_negative(n);
+    let num = n.unwrap().abs();
+
+    if is_integer(n) {
+        let integer: u64 = num as u64;
+
+        let result = factorial::factorial(integer);
+
+        Ok(change_sign(result, neg))
+    } else {
+        Ok(change_sign(gamma(num + 1.0), neg))
+    }
 }
 
 #[cfg(test)]
@@ -154,8 +149,8 @@ mod tests {
         let result = evaluate("42".to_string());
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(eval_result.is_int());
-        assert_eq!(eval_result.int_value, Some(42));
+        assert!(is_integer(eval_result.value));
+        assert_eq!(eval_result.int_value(), Some(42));
     }
 
     #[test]
@@ -171,8 +166,8 @@ mod tests {
             let result = evaluate(i.0);
             assert!(result.is_ok());
             let eval_result = result.unwrap();
-            assert!(eval_result.is_int());
-            assert_eq!(eval_result.int_value, Some(i.1));
+            assert!(is_integer(eval_result.value));
+            assert_eq!(eval_result.int_value(), Some(i.1));
         }
     }
 
@@ -189,8 +184,8 @@ mod tests {
             let result = evaluate(i.0);
             assert!(result.is_ok());
             let eval_result = result.unwrap();
-            assert!(eval_result.is_int());
-            assert_eq!(eval_result.int_value, Some(i.1));
+            assert!(is_integer(eval_result.value));
+            assert_eq!(eval_result.int_value(), Some(i.1));
         }
     }
 
@@ -206,26 +201,90 @@ mod tests {
         let result = evaluate("2*(3+4)".to_string());
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(eval_result.is_int());
-        assert_eq!(eval_result.int_value, Some(14));
+        assert!(is_integer(eval_result.value));
+        assert_eq!(eval_result.int_value(), Some(14));
     }
 
     #[test]
-    // #[ignore = "Not implemented yet"]
     fn test_evaluate_factoriacl_expressions() {
         let result = evaluate("5!".to_string());
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(eval_result.is_int());
-        assert_eq!(eval_result.int_value, Some(120));
+        assert!(is_integer(eval_result.value));
+        assert_eq!(eval_result.int_value(), Some(120));
+    }
+
+    #[test]
+    fn test_evaluate_factoriacl_with_negative_expressions() {
+        let result = evaluate("-5!".to_string());
+        assert!(result.is_ok());
+        let eval_result = result.unwrap();
+        assert!(is_integer(eval_result.value));
+        assert_eq!(eval_result.int_value(), Some(-120));
+    }
+
+    #[test]
+    fn test_evaluate_factoriacl_float_expressions() {
+        let result = evaluate("2.3!".to_string());
+        assert!(result.is_ok());
+        let eval_result = result.unwrap();
+        assert!(!is_integer(eval_result.value));
+        assert_eq!(eval_result.value, Some(2.6834373819557666));
+    }
+
+    #[test]
+    fn test_evaluate_factoriacl_negative_float_expressions() {
+        let result = evaluate("-2.3!".to_string());
+        assert!(result.is_ok());
+        let eval_result = result.unwrap();
+        assert!(!is_integer(eval_result.value));
+        assert_eq!(eval_result.value, Some(-2.6834373819557666));
+    }
+
+    #[test]
+    fn test_evaluate_factoriacl_limit_expressions() {
+        let result = evaluate("170!".to_string());
+        assert!(result.is_ok());
+        let eval_result = result.unwrap();
+        assert!(is_integer(eval_result.value));
+        assert_eq!(eval_result.int_value(), None);
+        assert_eq!(eval_result.value(), "7.257415615307994e306");
+    }
+
+    #[test]
+    fn test_evaluate_factoriacl_overflow_expressions() {
+        let result = evaluate("171!".to_string());
+        assert!(result.is_ok());
+        let eval_result = result.unwrap();
+        assert!(!is_integer(eval_result.value));
+        assert_eq!(eval_result.value, Some(f64::INFINITY));
+    }
+
+    #[test]
+    fn test_evaluate_factoriacl_negative_limit_expressions() {
+        let result = evaluate("-170!".to_string());
+        assert!(result.is_ok());
+        let eval_result = result.unwrap();
+        assert!(is_integer(eval_result.value));
+        assert_eq!(eval_result.int_value(), None);
+        assert_eq!(eval_result.value(), "-7.257415615307994e306");
+    }
+
+    #[test]
+    fn test_evaluate_factoriacl_negative_overflow_expressions() {
+        let result = evaluate("-171!".to_string());
+        assert!(result.is_ok());
+        let eval_result = result.unwrap();
+        assert!(!is_integer(eval_result.value));
+        assert_eq!(eval_result.value, Some(f64::NEG_INFINITY));
     }
 
     #[test]
     fn test_evaluate_factorial_function_of_zero() {
-        let result = factorial(0);
+        let result = calc_factorial(Some(0.0));
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert_eq!(eval_result, 1);
+        assert_eq!(eval_result, 1.0);
     }
 
     #[test]

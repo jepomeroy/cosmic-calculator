@@ -1,6 +1,6 @@
 #[derive(Copy, PartialEq, Clone, Debug)]
 pub(crate) enum Token {
-    Number(i64),
+    Number(f64),
     Plus,
     Minus,
     Multiply,
@@ -8,7 +8,6 @@ pub(crate) enum Token {
     LParen,
     RParen,
     Percent,
-    Period,
     Caret,
     Exclamation,
     Eof, // equal sign or newline

@@ -2,8 +2,8 @@ use crate::token::Token;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Expression {
-    Integer {
-        value: i64,
+    Number {
+        value: f64,
     },
     Infix {
         left: Box<Expression>,
