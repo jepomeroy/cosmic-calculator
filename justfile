@@ -28,9 +28,10 @@ icon-svg-dst := icons-dst / 'scalable' / 'apps'
 # Default recipe which runs `just build-release`
 default: build-release
 
-# Runs `cargo clean`
+# Runs `cargo clean` for the workspace and calclib
 clean:
     cargo clean
+    cd calclib && cargo clean
 
 # Removes vendored dependencies
 clean-vendor:
@@ -49,9 +50,13 @@ build-release *args: (build-debug '--release' args)
 # Compiles release profile with vendored dependencies
 build-vendored *args: vendor-extract (build-release '--frozen --offline' args)
 
-# Continuously run calclib unit tests with bacon
+# Runs all tests across the workspace
+test *args:
+    cargo test --workspace {{args}}
+
+# Continuously run all tests with bacon (lib and app)
 test-watch:
-    cd calclib && bacon test
+    bacon test
 
 # Runs a clippy check
 check *args:

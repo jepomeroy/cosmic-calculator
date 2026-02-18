@@ -28,9 +28,12 @@ Requires a Rust toolchain (install via [rustup][rustup]). A [justfile](./justfil
 | `just` | Build the release binary (default recipe) |
 | `just run` | Build and run the application |
 | `just build-debug` | Build with the debug profile |
+| `just test` | Run all tests across the workspace |
+| `just test-app` | Run only the app crate tests |
+| `just test-lib` | Run only the `calclib` tests |
+| `just test-watch` | Continuously run `calclib` unit tests with [bacon][bacon] |
 | `just check` | Run clippy with pedantic warnings |
 | `just check-json` | Clippy with JSON output for IDE/LSP integration |
-| `just test-watch` | Continuously run `calclib` unit tests with [bacon][bacon] |
 | `just clean` | Run `cargo clean` |
 
 ## Installation
