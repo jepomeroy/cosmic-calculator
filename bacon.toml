@@ -1,8 +1,9 @@
 default_job = "test"
 
 [jobs.test]
-command = ["cargo", "test", "--color", "always"]
+command = ["cargo", "test", "--color", "always", "--workspace"]
 need_stdout = true
+watch = ["calclib"]
 
 [jobs.build]
 command = ["cargo", "build", "--color", "always"]

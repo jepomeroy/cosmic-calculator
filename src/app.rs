@@ -7,9 +7,9 @@ use calclib::validator::validate;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::{Alignment, Length, Padding};
+use cosmic::iced::{clipboard, Alignment, Color, Length, Padding};
 use cosmic::prelude::*;
-use cosmic::widget::{self, Id, about::About, button, icon, menu, nav_bar, text, text_input};
+use cosmic::widget::{self, Id, about::About, button, icon, menu, nav_bar, svg, text, text_input};
 use std::collections::HashMap;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -47,10 +47,11 @@ pub struct AppModel {
 pub enum Message {
     InputChanged(String),
     KeyPressed(String),
+    ModeSelected(String),
     CopyResultToInput(String),
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
-    UpdateConfig(Config),
+    // UpdateConfig(Config),
 }
 
 /// Create a COSMIC application from the app model
@@ -83,23 +84,11 @@ impl cosmic::Application for AppModel {
         // Create a nav bar with three page items.
         let mut nav = nav_bar::Model::default();
 
-        nav.insert()
-            .text(fl!("basic"))
-            .data::<Page>(Page::Basic)
-            .icon(icon::from_name("accessories-calculator-symbolic"))
-            .activate();
+        nav.insert().data::<Page>(Page::Basic).activate();
 
-        nav.insert()
-            .text(fl!("advanced"))
-            .data::<Page>(Page::Advanced)
-            .icon(icon::from_name("applications-system-symbolic"));
+        nav.insert().data::<Page>(Page::Advanced);
 
-        nav.insert()
-            .text(fl!("developer"))
-            .data::<Page>(Page::Developer)
-            .icon(icon::from_name(
-                "preferences-desktop-remote-desktop-symbolic",
-            ));
+        nav.insert().data::<Page>(Page::Developer);
 
         // Create the about widget
         let about = About::default()
@@ -168,9 +157,9 @@ impl cosmic::Application for AppModel {
     }
 
     /// Enables the COSMIC application to create a nav bar with this model.
-    fn nav_model(&self) -> Option<&nav_bar::Model> {
-        Some(&self.nav)
-    }
+    // fn nav_model(&self) -> Option<&nav_bar::Model> {
+    //     Some(&self.nav)
+    // }
 
     /// Display a context drawer if the context page is requested.
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
@@ -275,7 +264,7 @@ impl cosmic::Application for AppModel {
                     .spacing(space_s),
             )
             .push(
-                widget::row::with_capacity(4)
+                widget::row::with_capacity(5)
                     .push(make_button("1", None))
                     .push(make_button("2", None))
                     .push(make_button("3", None))
@@ -284,11 +273,32 @@ impl cosmic::Application for AppModel {
                     .spacing(space_s),
             )
             .push(
-                widget::row::with_capacity(4)
+                widget::row::with_capacity(5)
                     .push(make_button("0", None))
                     .push(make_button(".", None))
                     .push(make_button("=", None))
                     .push(make_button("+", None))
+                    .push(make_button("Ans", None))
+                    .spacing(space_s),
+            )
+            .spacing(space_s)
+            .into();
+
+        let calculator_mode: Element<_> = widget::column::with_capacity(1)
+            .push(
+                widget::row::with_capacity(3)
+                    .push(icon_button_view(
+                        "basic".to_string(),
+                        include_bytes!("../resources/basic.svg"),
+                    ))
+                    .push(icon_button_view(
+                        "advanced".to_string(),
+                        include_bytes!("../resources/advanced.svg"),
+                    ))
+                    .push(icon_button_view(
+                        "developer".to_string(),
+                        include_bytes!("../resources/developer.svg"),
+                    ))
                     .spacing(space_s),
             )
             .spacing(space_s)
@@ -305,11 +315,13 @@ impl cosmic::Application for AppModel {
             .spacing(space_s);
 
         let content: Element<_> = match self.nav.active_data::<Page>().unwrap() {
-            Page::Basic => widget::column::with_capacity(3)
+            Page::Basic => widget::column::with_capacity(5)
                 .push(history)
                 .push(input)
                 .push(result)
                 .push(basic_keyboard)
+                .push(widget::vertical_space().height(25))
+                .push(calculator_mode)
                 .spacing(space_s)
                 .height(Length::Fill)
                 .into(),
@@ -322,6 +334,7 @@ impl cosmic::Application for AppModel {
 
                 widget::column::with_capacity(1)
                     .push(header)
+                    .push(calculator_mode)
                     .spacing(space_s)
                     .height(Length::Fill)
                     .into()
@@ -335,6 +348,7 @@ impl cosmic::Application for AppModel {
 
                 widget::column::with_capacity(1)
                     .push(header)
+                    .push(calculator_mode)
                     .spacing(space_s)
                     .height(Length::Fill)
                     .into()
@@ -342,7 +356,8 @@ impl cosmic::Application for AppModel {
         };
 
         widget::container(content)
-            .width(600)
+            .padding(20)
+            .width(Length::Fill)
             .height(Length::Fill)
             .apply(widget::container)
             .width(Length::Fill)
@@ -370,7 +385,10 @@ impl cosmic::Application for AppModel {
             }
             Message::CopyResultToInput(result) => {
                 self.input.push_str(&result);
-                return text_input::move_cursor_to_end(Id::new(INPUT_ID));
+                return Task::batch([
+                    clipboard::write(result),
+                    text_input::move_cursor_to_end(Id::new(INPUT_ID)),
+                ]);
             }
             Message::KeyPressed(value) => {
                 println!("key pressed: {}", value);
@@ -402,12 +420,32 @@ impl cosmic::Application for AppModel {
                             text_input::move_cursor_to_end(Id::new(INPUT_ID)),
                         ]);
                     }
+                    "Ans" => {
+                        if let Some((_, last_result)) = self.history.last() {
+                            self.input.push_str(last_result);
+                        }
+                    }
                     _ => {
                         self.input.push_str(&value);
                     }
                 }
 
                 return text_input::move_cursor_to_end(Id::new(INPUT_ID));
+            }
+            Message::ModeSelected(mode) => {
+                if let Some(page) = Page::from_str(&mode) {
+                    let target = self.nav.iter().find(|&id| {
+                        self.nav
+                            .data::<Page>(id)
+                            .map(|data| {
+                                std::mem::discriminant(data) == std::mem::discriminant(&page)
+                            })
+                            .unwrap_or(false)
+                    });
+                    if let Some(id) = target {
+                        return self.on_nav_select(id);
+                    }
+                }
             }
             Message::ToggleContextPage(context_page) => {
                 if self.context_page == context_page {
@@ -419,10 +457,10 @@ impl cosmic::Application for AppModel {
                     self.core.window.show_context = true;
                 }
             }
-            Message::UpdateConfig(config) => {
-                println!("updating config: {:?}", config);
-                self.config = config;
-            }
+            // Message::UpdateConfig(config) => {
+            //     println!("updating config: {:?}", config);
+            //     self.config = config;
+            // }
             Message::LaunchUrl(url) => match open::that_detached(&url) {
                 Ok(()) => {}
                 Err(err) => {
@@ -472,6 +510,31 @@ fn make_button(label: &str, handler: Option<Message>) -> Element<'_, Message> {
     .into()
 }
 
+// Function to create the button with an SVG icon
+fn icon_button_view(id: String, svg_data: &'static [u8]) -> Element<'static, Message> {
+    // 1. Load the SVG data from memory at compile time
+    let handle = svg::Handle::from_memory(svg_data);
+
+    // 2. Create the Svg widget
+    let svg_widget = svg(handle)
+        .width(32)
+        .class(cosmic::theme::Svg::custom(|_theme| svg::Style {
+            color: Some(Color::from_rgb(0.9, 0.9, 0.9)),
+        }));
+
+    // 3. Combine the Svg with optional content in a Row
+    let content = widget::row::with_capacity(2)
+        .push(svg_widget)
+        .align_y(Alignment::Center)
+        .spacing(8);
+
+    // 4. Wrap the content in a Button and add behavior
+    button::custom(content)
+        .on_press(Message::ModeSelected(id))
+        .padding(10)
+        .into()
+}
+
 impl AppModel {
     /// Updates the header and window titles.
     pub fn update_title(&mut self) -> Task<cosmic::Action<Message>> {
@@ -507,7 +570,7 @@ impl AppModel {
                 )
             }
             Err(err) => {
-                self.result = format!("{}", err);
+                self.result = err;
                 Task::none()
             }
         }
