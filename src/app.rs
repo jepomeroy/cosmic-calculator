@@ -7,9 +7,11 @@ use calclib::validator::validate;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::{clipboard, Alignment, Color, Length, Padding};
+use cosmic::iced::{Alignment, Color, Length, Padding, clipboard};
 use cosmic::prelude::*;
-use cosmic::widget::{self, Id, about::About, button, icon, menu, nav_bar, svg, text, text_input};
+use cosmic::widget::{
+    self, Id, about::About, autosize::autosize, button, icon, menu, nav_bar, svg, text, text_input,
+};
 use std::collections::HashMap;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
@@ -51,6 +53,7 @@ pub enum Message {
     CopyResultToInput(String),
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
+    ApplyResize,
     // UpdateConfig(Config),
 }
 
@@ -235,6 +238,38 @@ impl cosmic::Application for AppModel {
             .align_y(Alignment::End)
             .spacing(space_s);
 
+        let advanced_keyboard: Element<_> = widget::column::with_capacity(1)
+            .push(
+                widget::row::with_capacity(3)
+                    .push(make_button("Log", None))
+                    .push(make_button("Ln", None))
+                    .push(make_button("Log₂x", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(3)
+                    .push(make_button("1/x", None))
+                    .push(make_button("√", None))
+                    .push(make_button("∛", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(3)
+                    .push(make_button("x²", None))
+                    .push(make_button("x³", None))
+                    .push(make_button("xʸ", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(3)
+                    .push(make_button("π", None))
+                    .push(make_button("e", None))
+                    .push(make_button("Abs", None))
+                    .spacing(space_s),
+            )
+            .spacing(space_s)
+            .into();
+
         let basic_keyboard: Element<_> = widget::column::with_capacity(1)
             .push(
                 widget::row::with_capacity(5)
@@ -314,6 +349,13 @@ impl cosmic::Application for AppModel {
             .align_y(Alignment::End)
             .spacing(space_s);
 
+        let target_w = match self.nav.active_data::<Page>().unwrap() {
+            Page::Basic => 460.0_f32,
+            Page::Advanced => 660.0_f32,
+            Page::Developer => 460.0_f32,
+        };
+        println!("view() called, target_w={target_w}");
+
         let content: Element<_> = match self.nav.active_data::<Page>().unwrap() {
             Page::Basic => widget::column::with_capacity(5)
                 .push(history)
@@ -323,22 +365,22 @@ impl cosmic::Application for AppModel {
                 .push(widget::vertical_space().height(25))
                 .push(calculator_mode)
                 .spacing(space_s)
-                .height(Length::Fill)
                 .into(),
 
-            Page::Advanced => {
-                let header = widget::row::with_capacity(2)
-                    .push(widget::text::title2(fl!("advanced")))
-                    .align_y(Alignment::End)
-                    .spacing(space_s);
-
-                widget::column::with_capacity(1)
-                    .push(header)
-                    .push(calculator_mode)
-                    .spacing(space_s)
-                    .height(Length::Fill)
-                    .into()
-            }
+            Page::Advanced => widget::column::with_capacity(1)
+                .push(history)
+                .push(input)
+                .push(result)
+                .push(
+                    widget::row::with_capacity(2)
+                        .push(basic_keyboard)
+                        .push(advanced_keyboard)
+                        .spacing(space_s),
+                )
+                .push(widget::vertical_space().height(25))
+                .push(calculator_mode)
+                .spacing(space_s)
+                .into(),
 
             Page::Developer => {
                 let header = widget::row::with_capacity(2)
@@ -350,20 +392,19 @@ impl cosmic::Application for AppModel {
                     .push(header)
                     .push(calculator_mode)
                     .spacing(space_s)
-                    .height(Length::Fill)
                     .into()
             }
         };
 
-        widget::container(content)
-            .padding(20)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .apply(widget::container)
-            .width(Length::Fill)
-            .align_x(Horizontal::Center)
-            .align_y(Vertical::Center)
-            .into()
+        autosize(
+            widget::container(content).padding(20).width(Length::Fill),
+            Id::new("calculator-autosize"),
+        )
+        .min_width(target_w)
+        .max_width(target_w)
+        .min_height(750.0)
+        .max_height(750.0)
+        .into()
     }
 
     /// Handles messages emitted by the application and its widgets.
@@ -467,6 +508,19 @@ impl cosmic::Application for AppModel {
                     eprintln!("failed to open {url:?}: {err}");
                 }
             },
+            Message::ApplyResize => {
+                let target_w = match self.nav.active_data::<Page>().unwrap() {
+                    Page::Basic => 460.0_f32,
+                    Page::Advanced => 660.0_f32,
+                    Page::Developer => 460.0_f32,
+                };
+                if let Some(window_id) = self.core.main_window_id() {
+                    return cosmic::iced::window::resize(
+                        window_id,
+                        cosmic::iced::Size::new(target_w, 750.0),
+                    );
+                }
+            }
         }
         Task::none()
     }
@@ -484,7 +538,10 @@ impl cosmic::Application for AppModel {
             }
         }
 
-        self.update_title()
+        Task::batch([
+            self.update_title(),
+            Task::done(cosmic::Action::App(Message::ApplyResize)),
+        ])
     }
 }
 /// Substitute certain characters with their calc lib equivalents
