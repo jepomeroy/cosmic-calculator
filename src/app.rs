@@ -3,7 +3,6 @@
 use crate::config::Config;
 use crate::fl;
 use calclib::evaluator::evaluate;
-use calclib::validator::validate;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -53,8 +52,6 @@ pub enum Message {
     CopyResultToInput(String),
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
-    ApplyResize,
-    // UpdateConfig(Config),
 }
 
 /// Create a COSMIC application from the app model
@@ -140,8 +137,8 @@ impl cosmic::Application for AppModel {
             result: "0".to_string(),
         };
 
-        // Create a startup command that sets the window title.
-        let command = app.update_title();
+        // Create a startup command that sets the window title and size.
+        let command = app.on_nav_select(app.nav.active());
 
         (app, command)
     }
@@ -158,11 +155,6 @@ impl cosmic::Application for AppModel {
 
         vec![menu_bar.into()]
     }
-
-    /// Enables the COSMIC application to create a nav bar with this model.
-    // fn nav_model(&self) -> Option<&nav_bar::Model> {
-    //     Some(&self.nav)
-    // }
 
     /// Display a context drawer if the context page is requested.
     fn context_drawer(&self) -> Option<context_drawer::ContextDrawer<'_, Self::Message>> {
@@ -349,19 +341,16 @@ impl cosmic::Application for AppModel {
             .align_y(Alignment::End)
             .spacing(space_s);
 
-        let target_w = match self.nav.active_data::<Page>().unwrap() {
-            Page::Basic => 460.0_f32,
-            Page::Advanced => 660.0_f32,
-            Page::Developer => 460.0_f32,
-        };
-        println!("view() called, target_w={target_w}");
-
         let content: Element<_> = match self.nav.active_data::<Page>().unwrap() {
             Page::Basic => widget::column::with_capacity(5)
                 .push(history)
                 .push(input)
                 .push(result)
-                .push(basic_keyboard)
+                .push(
+                    widget::container(basic_keyboard)
+                        .width(Length::Fill)
+                        .align_x(Horizontal::Center),
+                )
                 .push(widget::vertical_space().height(25))
                 .push(calculator_mode)
                 .spacing(space_s)
@@ -372,10 +361,14 @@ impl cosmic::Application for AppModel {
                 .push(input)
                 .push(result)
                 .push(
-                    widget::row::with_capacity(2)
-                        .push(basic_keyboard)
-                        .push(advanced_keyboard)
-                        .spacing(space_s),
+                    widget::container(
+                        widget::row::with_capacity(2)
+                            .push(basic_keyboard)
+                            .push(advanced_keyboard)
+                            .spacing(space_s),
+                    )
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Center),
                 )
                 .push(widget::vertical_space().height(25))
                 .push(calculator_mode)
@@ -400,8 +393,8 @@ impl cosmic::Application for AppModel {
             widget::container(content).padding(20).width(Length::Fill),
             Id::new("calculator-autosize"),
         )
-        .min_width(target_w)
-        .max_width(target_w)
+        .min_width(660.0)
+        .max_width(660.0)
         .min_height(750.0)
         .max_height(750.0)
         .into()
@@ -414,14 +407,17 @@ impl cosmic::Application for AppModel {
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
             Message::InputChanged(value) => {
-                println!("input changed: {}", value);
-
-                if value.chars().any(|c| c == '=' || c == '\n') {
+                if value.contains('=') || value.contains('\n') {
                     return self.evaluate_input();
                 }
-
-                if value.chars().all(|c| validate(&c)) {
-                    self.input = substitute(value);
+                let substituted = substitute(value);
+                // Reject a closing paren that would leave more closing than opening,
+                // matching the same rule applied by the ")" button.
+                if get_paren_count(&substituted) < 0 {
+                    // Revert: leave self.input unchanged; the widget will re-sync on
+                    // the next frame.
+                } else {
+                    self.input = substituted;
                 }
             }
             Message::CopyResultToInput(result) => {
@@ -432,26 +428,32 @@ impl cosmic::Application for AppModel {
                 ]);
             }
             Message::KeyPressed(value) => {
-                println!("key pressed: {}", value);
-
                 match value.as_str() {
                     "AC" => {
                         self.history.clear();
                         self.input.clear();
                         self.result = "0".to_string();
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
                     }
                     "C" => {
                         self.input.clear();
                         self.result = "0".to_string();
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
                     }
                     "⌫" => {
-                        self.input.pop();
+                        // Button backspace always removes the last character
+                        let mut chars = self.input.chars();
+                        chars.next_back();
+                        self.input = chars.as_str().to_string();
+                        return text_input::move_cursor_to_end(Id::new(INPUT_ID));
                     }
                     "±" => {
-                        if self.input.starts_with('-') {
-                            self.input.remove(0);
+                        if self.input.starts_with('−') || self.input.starts_with('-') {
+                            let mut chars = self.input.chars();
+                            chars.next();
+                            self.input = chars.as_str().to_string();
                         } else {
-                            self.input.insert(0, '-');
+                            self.input.insert(0, '−');
                         }
                     }
                     "=" => {
@@ -462,15 +464,57 @@ impl cosmic::Application for AppModel {
                         ]);
                     }
                     "Ans" => {
-                        if let Some((_, last_result)) = self.history.last() {
-                            self.input.push_str(last_result);
+                        if let Some((_, last_result)) = self.history.last().cloned() {
+                            self.input.push_str(&last_result);
                         }
                     }
+                    ")" => {
+                        if get_paren_count(&self.input) > 0 {
+                            self.input.push(')');
+                        }
+                    }
+                    "Log" => {
+                        self.input.push_str("log()");
+                        let pos = self.input.chars().count() - 1;
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
+                    }
+                    "Ln" => {
+                        self.input.push_str("ln()");
+                        let pos = self.input.chars().count() - 1;
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
+                    }
+                    "Log₂x" => {
+                        self.input.push_str("log₂()");
+                        let pos = self.input.chars().count() - 1;
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
+                    }
+                    "1/x" => {
+                        self.input.push_str("1/()");
+                        let pos = self.input.chars().count() - 1;
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
+                    }
+                    "√" => {
+                        self.input.push_str("√()");
+                        let pos = self.input.chars().count() - 1;
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
+                    }
+                    "∛" => {
+                        self.input.push_str("∛()");
+                        let pos = self.input.chars().count() - 1;
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
+                    }
+                    "x²" => self.input.push('²'),
+                    "x³" => self.input.push('³'),
+                    "xʸ" => self.input.push('^'),
+                    "Abs" => {
+                        self.input.push_str("abs()");
+                        let pos = self.input.chars().count() - 1;
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
+                    }
                     _ => {
-                        self.input.push_str(&value);
+                        self.input.push_str(&substitute(value));
                     }
                 }
-
                 return text_input::move_cursor_to_end(Id::new(INPUT_ID));
             }
             Message::ModeSelected(mode) => {
@@ -483,6 +527,7 @@ impl cosmic::Application for AppModel {
                             })
                             .unwrap_or(false)
                     });
+
                     if let Some(id) = target {
                         return self.on_nav_select(id);
                     }
@@ -498,34 +543,16 @@ impl cosmic::Application for AppModel {
                     self.core.window.show_context = true;
                 }
             }
-            // Message::UpdateConfig(config) => {
-            //     println!("updating config: {:?}", config);
-            //     self.config = config;
-            // }
             Message::LaunchUrl(url) => match open::that_detached(&url) {
                 Ok(()) => {}
                 Err(err) => {
                     eprintln!("failed to open {url:?}: {err}");
                 }
             },
-            Message::ApplyResize => {
-                let target_w = match self.nav.active_data::<Page>().unwrap() {
-                    Page::Basic => 460.0_f32,
-                    Page::Advanced => 660.0_f32,
-                    Page::Developer => 460.0_f32,
-                };
-                if let Some(window_id) = self.core.main_window_id() {
-                    return cosmic::iced::window::resize(
-                        window_id,
-                        cosmic::iced::Size::new(target_w, 750.0),
-                    );
-                }
-            }
         }
         Task::none()
     }
 
-    /// Called when a nav item is selected.
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Self::Message>> {
         // Activate the page in the model.
         self.nav.activate(id);
@@ -538,12 +565,27 @@ impl cosmic::Application for AppModel {
             }
         }
 
-        Task::batch([
-            self.update_title(),
-            Task::done(cosmic::Action::App(Message::ApplyResize)),
-        ])
+        Task::batch(vec![self.update_title()])
     }
 }
+
+fn get_paren_count(input: &String) -> i32 {
+    let mut opening = 0;
+    let mut closing = 0;
+
+    for c in input.chars() {
+        match c {
+            '(' => opening += 1,
+            ')' => closing += 1,
+            _ => (),
+        };
+    }
+
+    println!("Parens count: open: {opening}, close: {closing}");
+
+    opening - closing
+}
+
 /// Substitute certain characters with their calc lib equivalents
 fn substitute(input: String) -> String {
     input.replace('*', "×").replace('/', "÷").replace('-', "−")
@@ -554,7 +596,7 @@ fn make_button(label: &str, handler: Option<Message>) -> Element<'_, Message> {
 
     button::custom(
         text(label)
-            .size(20)
+            .size(18)
             .font(cosmic::font::bold())
             .width(Length::Fill)
             .height(Length::Fill)
@@ -595,13 +637,8 @@ fn icon_button_view(id: String, svg_data: &'static [u8]) -> Element<'static, Mes
 impl AppModel {
     /// Updates the header and window titles.
     pub fn update_title(&mut self) -> Task<cosmic::Action<Message>> {
-        let mut window_title = fl!("app-title");
-
-        if let Some(page) = self.nav.text(self.nav.active()) {
-            window_title.push_str(" — ");
-            window_title.push_str(page);
-        }
-
+        let window_title = fl!("app-title");
+        self.set_header_title(window_title.clone());
         if let Some(id) = self.core.main_window_id() {
             self.set_window_title(window_title, id)
         } else {
@@ -615,7 +652,9 @@ impl AppModel {
             .input
             .replace('×', "*")
             .replace('÷', "/")
-            .replace('−', "-");
+            .replace('−', "-")
+            .replace('π', &std::f64::consts::PI.to_string())
+            .replace('e', &std::f64::consts::E.to_string());
         match evaluate(expression) {
             Ok(result) => {
                 self.result = result.value();
