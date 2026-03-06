@@ -654,7 +654,13 @@ impl AppModel {
             .replace('÷', "/")
             .replace('−', "-")
             .replace('π', &std::f64::consts::PI.to_string())
-            .replace('e', &std::f64::consts::E.to_string());
+            .replace('e', &std::f64::consts::E.to_string())
+            .replace('²', "^2")
+            .replace('³', "^3")
+            .replace('√', "sqrt")
+            .replace('∛', "cbrt")
+            .replace("log₂", "logtwo");
+
         match evaluate(expression) {
             Ok(result) => {
                 self.result = result.value();

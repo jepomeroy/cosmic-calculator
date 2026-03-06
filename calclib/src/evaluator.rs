@@ -1,8 +1,10 @@
-use crate::ast::Expression::{Infix, Number, Prefix, Unary};
+use crate::ast::Expression::{self, Function, Infix, Number, Prefix, Unary};
 use crate::parser::Parser;
+use crate::token::{FunctionType, Token};
 use crate::utils::{change_sign, is_integer, is_negative};
 use statrs::function::{factorial, gamma::gamma};
 
+#[derive(Debug, PartialEq)]
 pub struct EvaluationResult {
     value: Option<f64>,
 }
@@ -48,7 +50,7 @@ pub fn evaluate(input: String) -> Result<EvaluationResult, String> {
     }
 }
 
-fn evaluate_expression(expression: crate::ast::Expression) -> Result<EvaluationResult, String> {
+fn evaluate_expression(expression: Expression) -> Result<EvaluationResult, String> {
     match expression {
         Number { value } => Ok(EvaluationResult { value: Some(value) }),
         Infix {
@@ -63,16 +65,16 @@ fn evaluate_expression(expression: crate::ast::Expression) -> Result<EvaluationR
             let right_num = right_val.value.unwrap();
 
             match operator {
-                crate::token::Token::Plus => Ok(EvaluationResult {
+                Token::Plus => Ok(EvaluationResult {
                     value: Some(left_num + right_num),
                 }),
-                crate::token::Token::Minus => Ok(EvaluationResult {
+                Token::Minus => Ok(EvaluationResult {
                     value: Some(left_num - right_num),
                 }),
-                crate::token::Token::Multiply => Ok(EvaluationResult {
+                Token::Multiply => Ok(EvaluationResult {
                     value: Some(left_num * right_num),
                 }),
-                crate::token::Token::Divide => {
+                Token::Divide => {
                     if right_num == 0.0 {
                         Err("Division by zero".to_string())
                     } else {
@@ -81,6 +83,9 @@ fn evaluate_expression(expression: crate::ast::Expression) -> Result<EvaluationR
                         })
                     }
                 }
+                Token::Caret => Ok(EvaluationResult {
+                    value: Some(left_num.powf(right_num)),
+                }),
                 _ => Err("Unsupported operator".to_string()),
             }
         }
@@ -90,7 +95,7 @@ fn evaluate_expression(expression: crate::ast::Expression) -> Result<EvaluationR
             let right_num = right_val.value.unwrap();
 
             match operator {
-                crate::token::Token::Minus => Ok(EvaluationResult {
+                Token::Minus => Ok(EvaluationResult {
                     value: Some(-right_num),
                 }),
                 _ => Err("Unsupported operator".to_string()),
@@ -105,13 +110,53 @@ fn evaluate_expression(expression: crate::ast::Expression) -> Result<EvaluationR
             let expr_num = expr_val.value;
 
             match operator {
-                crate::token::Token::Exclamation => match calc_factorial(expr_num) {
+                Token::Exclamation => match calc_factorial(expr_num) {
                     Ok(result) => Ok(EvaluationResult {
                         value: Some(result),
                     }),
                     Err(_) => Err("Failed to compute factorial".to_string()),
                 },
                 _ => Err("Unsupported operator".to_string()),
+            }
+        }
+
+        Function { function, argument } => {
+            let expr_val = evaluate_expression(*argument)?;
+
+            let expr_num = expr_val.value;
+
+            match function {
+                FunctionType::Log => expr_num
+                    .map(|n| EvaluationResult {
+                        value: Some(n.log10()),
+                    })
+                    .ok_or_else(|| "Failed to compute log".to_string()),
+
+                FunctionType::Ln => expr_num
+                    .map(|n| EvaluationResult {
+                        value: Some(n.ln()),
+                    })
+                    .ok_or_else(|| "Failed to compute ln".to_string()),
+                FunctionType::LogTwo => expr_num
+                    .map(|n| EvaluationResult {
+                        value: Some(n.log2()),
+                    })
+                    .ok_or_else(|| "Failed to compute logtwo".to_string()),
+                FunctionType::SqRt => expr_num
+                    .map(|n| EvaluationResult {
+                        value: Some(n.sqrt()),
+                    })
+                    .ok_or_else(|| "Failed to compute sqrt".to_string()),
+                FunctionType::CbRt => expr_num
+                    .map(|n| EvaluationResult {
+                        value: Some(n.cbrt()),
+                    })
+                    .ok_or_else(|| "Failed to compute cbrt".to_string()),
+                FunctionType::Abs => expr_num
+                    .map(|n| EvaluationResult {
+                        value: Some(n.abs()),
+                    })
+                    .ok_or_else(|| "Failed to compute abs".to_string()),
             }
         }
     }
@@ -288,20 +333,47 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Not implemented yet"]
     fn test_evaluate_type_mismatch() {
         let result = evaluate("2+3.5".to_string());
-        assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap(),
-            "Type mismatch: expected integers".to_string()
-        );
+        assert!(result.is_ok());
+        let eval_result = result.unwrap();
+        assert_eq!(eval_result.value, Some(5.5));
     }
 
     #[test]
-    fn test_evaluate_unsupported_operator() {
-        let result = evaluate("2^3".to_string());
-        assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), "Unsupported operator".to_string());
+    fn test_evaluate_powers() {
+        let inputs = vec![
+            ("3^2", Some(9.0)),
+            ("2^3", Some(8.0)),
+            ("2^8", Some(256.0)),
+            ("2.391^2", Some(5.716881)),
+        ];
+
+        for (input, expected) in inputs {
+            let result = evaluate(input.to_string());
+            assert!(result.is_ok());
+            let eval_result = result.unwrap();
+            assert_eq!(eval_result.value, expected);
+        }
+    }
+
+    #[test]
+    fn test_math_functions() {
+        let inputs = vec![
+            ("log(100)", Some(2.0)),
+            ("ln(12)", Some(2.4849066497880004)),
+            ("logtwo(8)", Some(3.0)),
+            ("cbrt(27)", Some(3.0)),
+            ("cbrt(8)", Some(2.0)),
+            ("abs(-5)", Some(5.0)),
+            ("abs(3)", Some(3.0)),
+        ];
+
+        for (input, expected) in inputs {
+            let result = evaluate(input.to_string());
+            assert!(result.is_ok());
+            let eval_result = result.unwrap();
+            assert_eq!(eval_result.value, expected);
+        }
     }
 }

@@ -1,4 +1,4 @@
-use crate::token::Token;
+use crate::token::{FunctionType, Token};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Expression {
@@ -17,5 +17,9 @@ pub(crate) enum Expression {
     Unary {
         operator: Token,
         expression: Box<Expression>,
+    },
+    Function {
+        function: FunctionType,
+        argument: Box<Expression>,
     },
 }

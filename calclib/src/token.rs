@@ -2,7 +2,9 @@
 pub(crate) enum FunctionType {
     Log,
     Ln,
-    Sqrt,
+    LogTwo,
+    SqRt,
+    CbRt,
     Abs,
 }
 
