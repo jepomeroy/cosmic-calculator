@@ -1,4 +1,14 @@
 #[derive(Copy, PartialEq, Clone, Debug)]
+pub(crate) enum FunctionType {
+    Log,    // Log10
+    Ln,     // Natural Log
+    LogTwo, // Log base 2
+    SqRt,   // Square Root
+    CbRt,   // Cube Root
+    Abs,    // absolute value
+}
+
+#[derive(Copy, PartialEq, Clone, Debug)]
 pub(crate) enum Token {
     Number(f64),
     Plus,
@@ -10,6 +20,7 @@ pub(crate) enum Token {
     Percent,
     Caret,
     Exclamation,
+    Function(FunctionType),
     Eof, // equal sign or newline
 }
 

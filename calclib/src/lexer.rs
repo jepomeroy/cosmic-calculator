@@ -1,4 +1,4 @@
-use crate::token::Token;
+use crate::token::{FunctionType, Token};
 use std::num::ParseFloatError;
 
 pub(crate) struct Lexer {
@@ -41,6 +41,18 @@ impl Lexer {
                     Err(_) => Err("Failed to parse number".to_string()),
                 }
             }
+            'a'..='z' | 'A'..='Z' => {
+                let ident = self.read_ident();
+                match ident.as_str() {
+                    "log" => Ok(Token::Function(FunctionType::Log)),
+                    "logtwo" => Ok(Token::Function(FunctionType::LogTwo)),
+                    "ln" => Ok(Token::Function(FunctionType::Ln)),
+                    "sqrt" => Ok(Token::Function(FunctionType::SqRt)),
+                    "cbrt" => Ok(Token::Function(FunctionType::CbRt)),
+                    "abs" => Ok(Token::Function(FunctionType::Abs)),
+                    _ => Err(format!("Unknown identifier: {}", ident)),
+                }
+            }
             _ => Err(format!("Unknown type: {}", ch)),
         }
     }
@@ -54,6 +66,14 @@ impl Lexer {
         } else {
             Ok(Token::Eof)
         }
+    }
+
+    fn peek_is_char(&self) -> bool {
+        if self.read_position < self.input.len() {
+            return self.input.as_bytes()[self.read_position].is_ascii_alphabetic();
+        }
+
+        false
     }
 
     fn peek_is_digit(&self) -> bool {
@@ -83,6 +103,19 @@ impl Lexer {
         self.read_position += 1;
     }
 
+    fn read_ident(&mut self) -> String {
+        let position = self.position;
+        while self.ch.is_some() {
+            if self.peek_is_char() {
+                self.read_char();
+            } else {
+                break;
+            }
+        }
+
+        self.input[position..self.position + 1].to_string()
+    }
+
     fn read_number(&mut self) -> Result<f64, ParseFloatError> {
         let position = self.position;
         while self.ch.is_some() {
@@ -101,6 +134,8 @@ impl Lexer {
 
 #[cfg(test)]
 mod tests {
+    use crate::token::FunctionType;
+
     use super::*;
     #[test]
     fn test_lexer_literal() {
@@ -140,6 +175,24 @@ mod tests {
         for expected in expected_tokens {
             let token = l.next_token().unwrap();
             assert_eq!(token, expected);
+        }
+    }
+
+    #[test]
+    fn test_function_strings() {
+        let inputs = vec![
+            ("log", Token::Function(FunctionType::Log)),
+            ("ln", Token::Function(FunctionType::Ln)),
+            ("logtwo", Token::Function(FunctionType::LogTwo)),
+            ("sqrt", Token::Function(FunctionType::SqRt)),
+            ("cbrt", Token::Function(FunctionType::CbRt)),
+            ("abs", Token::Function(FunctionType::Abs)),
+        ];
+
+        for (input, expected) in inputs {
+            let mut l = Lexer::new(input.to_string());
+            let token = l.next_token();
+            assert_eq!(token, Ok(expected));
         }
     }
 

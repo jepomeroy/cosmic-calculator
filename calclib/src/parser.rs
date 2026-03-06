@@ -1,7 +1,7 @@
 use crate::{
     ast::Expression,
     lexer::Lexer,
-    token::{LOWEST, PREFIX, Token},
+    token::{FunctionType, Token, LOWEST, PREFIX},
 };
 
 pub struct Parser {
@@ -52,6 +52,16 @@ impl Parser {
         }
 
         Ok(expression)
+    }
+
+    fn parse_function(&mut self, func_type: FunctionType) -> Option<Expression> {
+        self.next_token();
+        let right = self.parse_expression(LOWEST);
+
+        Some(Expression::Function {
+            function: func_type,
+            argument: Box::new(right?),
+        })
     }
 
     fn parse_infix(&mut self, left: Option<Expression>) -> Option<Expression> {
@@ -120,6 +130,7 @@ impl Parser {
                 expr
             }
             Some(Token::Number(value)) => Some(Expression::Number { value: *value }),
+            Some(Token::Function(func_type)) => self.parse_function(func_type.clone()),
             _ => return None,
         };
 
@@ -326,6 +337,39 @@ mod tests {
                             right: Box::new(Expression::Number { value: 3.0 }),
                         }),
                     }),
+                })),
+            ),
+        ];
+
+        let mut p = Parser::new();
+        for (expr, expected_tokens) in input {
+            let result = p.parse(expr.to_string());
+            assert_eq!(result, expected_tokens);
+        }
+    }
+
+    #[test]
+    fn test_functions() {
+        let input: Vec<(&str, Result<Option<Expression>, String>)> = vec![
+            (
+                "log(100)",
+                Ok(Some(Expression::Function {
+                    function: FunctionType::Log,
+                    argument: Box::new(Expression::Number { value: 100.0 }),
+                })),
+            ),
+            (
+                "ln(2.71828)",
+                Ok(Some(Expression::Function {
+                    function: FunctionType::Ln,
+                    argument: Box::new(Expression::Number { value: 2.71828 }),
+                })),
+            ),
+            (
+                "sqrt(16)",
+                Ok(Some(Expression::Function {
+                    function: FunctionType::SqRt,
+                    argument: Box::new(Expression::Number { value: 16.0 }),
                 })),
             ),
         ];
