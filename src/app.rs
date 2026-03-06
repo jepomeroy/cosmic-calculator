@@ -6,7 +6,7 @@ use calclib::evaluator::evaluate;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
-use cosmic::iced::{Alignment, Color, Length, Padding, clipboard};
+use cosmic::iced::{Alignment, Color, Length, Padding, clipboard, keyboard};
 use cosmic::prelude::*;
 use cosmic::widget::{
     self, Id, about::About, autosize::autosize, button, icon, menu, nav_bar, svg, text, text_input,
@@ -41,6 +41,8 @@ pub struct AppModel {
     input: String,
     /// Calculator result
     result: String,
+    /// Cursor position set by function buttons (e.g. inside `abs()`); None means append to end
+    cursor_pos: Option<usize>,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -52,6 +54,10 @@ pub enum Message {
     CopyResultToInput(String),
     LaunchUrl(String),
     ToggleContextPage(ContextPage),
+    ArrowLeft,
+    ArrowRight,
+    Home,
+    End,
 }
 
 /// Create a COSMIC application from the app model
@@ -135,6 +141,7 @@ impl cosmic::Application for AppModel {
             history: Vec::new(),
             input: "".to_string(),
             result: "0".to_string(),
+            cursor_pos: None,
         };
 
         // Create a startup command that sets the window title and size.
@@ -168,6 +175,30 @@ impl cosmic::Application for AppModel {
                 |url| Message::LaunchUrl(url.to_string()),
                 Message::ToggleContextPage(ContextPage::About),
             ),
+        })
+    }
+
+    fn subscription(&self) -> cosmic::iced::Subscription<Message> {
+        cosmic::iced::event::listen_with(|event, _status, _window_id| {
+            if let cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) = event {
+                match key {
+                    keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
+                        Some(Message::ArrowLeft)
+                    }
+                    keyboard::Key::Named(keyboard::key::Named::ArrowRight) => {
+                        Some(Message::ArrowRight)
+                    }
+                    keyboard::Key::Named(keyboard::key::Named::Home) => {
+                        Some(Message::Home)
+                    }
+                    keyboard::Key::Named(keyboard::key::Named::End) => {
+                        Some(Message::End)
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            }
         })
     }
 
@@ -407,6 +438,7 @@ impl cosmic::Application for AppModel {
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
             Message::InputChanged(value) => {
+                self.cursor_pos = None;
                 if value.contains('=') || value.contains('\n') {
                     return self.evaluate_input();
                 }
@@ -433,11 +465,13 @@ impl cosmic::Application for AppModel {
                         self.history.clear();
                         self.input.clear();
                         self.result = "0".to_string();
+                        self.cursor_pos = None;
                         return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
                     }
                     "C" => {
                         self.input.clear();
                         self.result = "0".to_string();
+                        self.cursor_pos = None;
                         return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
                     }
                     "⌫" => {
@@ -465,7 +499,9 @@ impl cosmic::Application for AppModel {
                     }
                     "Ans" => {
                         if let Some((_, last_result)) = self.history.last().cloned() {
-                            self.input.push_str(&last_result);
+                            let new_pos = insert_at_cursor(&mut self.input, &last_result, self.cursor_pos);
+                            self.cursor_pos = Some(new_pos);
+                            return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                         }
                     }
                     ")" => {
@@ -474,45 +510,55 @@ impl cosmic::Application for AppModel {
                         }
                     }
                     "Log" => {
-                        self.input.push_str("log()");
-                        let pos = self.input.chars().count() - 1;
+                        let inserted_end = insert_at_cursor(&mut self.input, "log()", self.cursor_pos);
+                        let pos = inserted_end - 1;
+                        self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "Ln" => {
-                        self.input.push_str("ln()");
-                        let pos = self.input.chars().count() - 1;
+                        let inserted_end = insert_at_cursor(&mut self.input, "ln()", self.cursor_pos);
+                        let pos = inserted_end - 1;
+                        self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "Log₂x" => {
-                        self.input.push_str("log₂()");
-                        let pos = self.input.chars().count() - 1;
+                        let inserted_end = insert_at_cursor(&mut self.input, "log₂()", self.cursor_pos);
+                        let pos = inserted_end - 1;
+                        self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "1/x" => {
-                        self.input.push_str("1/()");
-                        let pos = self.input.chars().count() - 1;
+                        let inserted_end = insert_at_cursor(&mut self.input, "1/()", self.cursor_pos);
+                        let pos = inserted_end - 1;
+                        self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "√" => {
-                        self.input.push_str("√()");
-                        let pos = self.input.chars().count() - 1;
+                        let inserted_end = insert_at_cursor(&mut self.input, "√()", self.cursor_pos);
+                        let pos = inserted_end - 1;
+                        self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "∛" => {
-                        self.input.push_str("∛()");
-                        let pos = self.input.chars().count() - 1;
+                        let inserted_end = insert_at_cursor(&mut self.input, "∛()", self.cursor_pos);
+                        let pos = inserted_end - 1;
+                        self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "x²" => self.input.push('²'),
                     "x³" => self.input.push('³'),
                     "xʸ" => self.input.push('^'),
                     "Abs" => {
-                        self.input.push_str("abs()");
-                        let pos = self.input.chars().count() - 1;
+                        let inserted_end = insert_at_cursor(&mut self.input, "abs()", self.cursor_pos);
+                        let pos = inserted_end - 1;
+                        self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     _ => {
-                        self.input.push_str(&substitute(value));
+                        let text = substitute(value);
+                        let new_pos = insert_at_cursor(&mut self.input, &text, self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                     }
                 }
                 return text_input::move_cursor_to_end(Id::new(INPUT_ID));
@@ -549,6 +595,27 @@ impl cosmic::Application for AppModel {
                     eprintln!("failed to open {url:?}: {err}");
                 }
             },
+            Message::ArrowLeft => {
+                let len = self.input.chars().count();
+                self.cursor_pos = Some(match self.cursor_pos {
+                    None => len.saturating_sub(1),
+                    Some(pos) => pos.saturating_sub(1),
+                });
+            }
+            Message::ArrowRight => {
+                let len = self.input.chars().count();
+                self.cursor_pos = match self.cursor_pos {
+                    None => None,
+                    Some(pos) if pos + 1 >= len => None,
+                    Some(pos) => Some(pos + 1),
+                };
+            }
+            Message::Home => {
+                self.cursor_pos = Some(0);
+            }
+            Message::End => {
+                self.cursor_pos = None;
+            }
         }
         Task::none()
     }
@@ -584,6 +651,26 @@ fn get_paren_count(input: &String) -> i32 {
     println!("Parens count: open: {opening}, close: {closing}");
 
     opening - closing
+}
+
+/// Inserts `text` into `input` at `cursor_pos` (char index), or appends if None.
+/// Returns the new cursor position (after the inserted text).
+fn insert_at_cursor(input: &mut String, text: &str, cursor_pos: Option<usize>) -> usize {
+    match cursor_pos {
+        Some(pos) => {
+            let byte_pos = input
+                .char_indices()
+                .nth(pos)
+                .map(|(i, _)| i)
+                .unwrap_or(input.len());
+            input.insert_str(byte_pos, text);
+            pos + text.chars().count()
+        }
+        None => {
+            input.push_str(text);
+            input.chars().count()
+        }
+    }
 }
 
 /// Substitute certain characters with their calc lib equivalents
@@ -666,6 +753,7 @@ impl AppModel {
                 self.result = result.value();
                 self.history.push((self.input.clone(), self.result.clone()));
                 self.input.clear();
+                self.cursor_pos = None;
                 cosmic::iced::widget::scrollable::snap_to(
                     Id::new(HISTORY_ID),
                     cosmic::iced::widget::scrollable::RelativeOffset::END,

@@ -1,11 +1,11 @@
 #[derive(Copy, PartialEq, Clone, Debug)]
 pub(crate) enum FunctionType {
-    Log,
-    Ln,
-    LogTwo,
-    SqRt,
-    CbRt,
-    Abs,
+    Log,    // Log10
+    Ln,     // Natural Log
+    LogTwo, // Log base 2
+    SqRt,   // Square Root
+    CbRt,   // Cube Root
+    Abs,    // absolute value
 }
 
 #[derive(Copy, PartialEq, Clone, Debug)]
