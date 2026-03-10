@@ -188,12 +188,8 @@ impl cosmic::Application for AppModel {
                     keyboard::Key::Named(keyboard::key::Named::ArrowRight) => {
                         Some(Message::ArrowRight)
                     }
-                    keyboard::Key::Named(keyboard::key::Named::Home) => {
-                        Some(Message::Home)
-                    }
-                    keyboard::Key::Named(keyboard::key::Named::End) => {
-                        Some(Message::End)
-                    }
+                    keyboard::Key::Named(keyboard::key::Named::Home) => Some(Message::Home),
+                    keyboard::Key::Named(keyboard::key::Named::End) => Some(Message::End),
                     _ => None,
                 }
             } else {
@@ -263,31 +259,107 @@ impl cosmic::Application for AppModel {
 
         let advanced_keyboard: Element<_> = widget::column::with_capacity(1)
             .push(
-                widget::row::with_capacity(3)
+                widget::row::with_capacity(2)
                     .push(make_button("Log", None))
                     .push(make_button("Ln", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(2)
+                    .push(make_button("1/x", None))
                     .push(make_button("Log₂x", None))
                     .spacing(space_s),
             )
             .push(
-                widget::row::with_capacity(3)
-                    .push(make_button("1/x", None))
+                widget::row::with_capacity(2)
                     .push(make_button("√", None))
                     .push(make_button("∛", None))
                     .spacing(space_s),
             )
             .push(
-                widget::row::with_capacity(3)
+                widget::row::with_capacity(2)
                     .push(make_button("x²", None))
                     .push(make_button("x³", None))
-                    .push(make_button("xʸ", None))
                     .spacing(space_s),
             )
             .push(
-                widget::row::with_capacity(3)
+                widget::row::with_capacity(2)
+                    .push(make_button("xʸ", None))
+                    .push(make_button("Abs", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(2)
                     .push(make_button("π", None))
                     .push(make_button("e", None))
-                    .push(make_button("Abs", None))
+                    .spacing(space_s),
+            )
+            .spacing(space_s)
+            .into();
+
+        let hexidecimal_keyboard: Element<_> = widget::column::with_capacity(1)
+            .push(
+                widget::row::with_capacity(1)
+                    .push(make_button("A", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(1)
+                    .push(make_button("B", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(1)
+                    .push(make_button("C", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(1)
+                    .push(make_button("D", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(1)
+                    .push(make_button("E", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(1)
+                    .push(make_button("F", None))
+                    .spacing(space_s),
+            )
+            .spacing(space_s)
+            .into();
+
+        let developer_keyboard: Element<_> = widget::column::with_capacity(1)
+            .push(
+                widget::row::with_capacity(2)
+                    .push(make_button("AND", None))
+                    .push(make_button("OR", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(2)
+                    .push(make_button("NAND", None))
+                    .push(make_button("NOR", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(2)
+                    .push(make_button("XNOR", None))
+                    .push(make_button("XOR", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(2)
+                    .push(make_button("<<", None))
+                    .push(make_button(">>", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(2)
+                    .push(make_button("MOD", None))
+                    .push(make_button("NOT", None))
                     .spacing(space_s),
             )
             .spacing(space_s)
@@ -295,48 +367,51 @@ impl cosmic::Application for AppModel {
 
         let basic_keyboard: Element<_> = widget::column::with_capacity(1)
             .push(
-                widget::row::with_capacity(5)
+                widget::row::with_capacity(4)
                     .push(make_button("AC", None))
                     .push(make_button("C", None))
-                    .push(make_button("±", None))
-                    .push(make_button("%", None))
                     .push(make_button("⌫", None))
+                    .push(make_button("Ans", None))
                     .spacing(space_s),
             )
             .push(
-                widget::row::with_capacity(5)
-                    .push(make_button("7", None))
-                    .push(make_button("8", None))
-                    .push(make_button("9", None))
-                    .push(make_button("÷", None))
+                widget::row::with_capacity(4)
                     .push(make_button("(", None))
-                    .spacing(space_s),
-            )
-            .push(
-                widget::row::with_capacity(5)
-                    .push(make_button("4", None))
-                    .push(make_button("5", None))
-                    .push(make_button("6", None))
-                    .push(make_button("×", None))
                     .push(make_button(")", None))
-                    .spacing(space_s),
-            )
-            .push(
-                widget::row::with_capacity(5)
-                    .push(make_button("1", None))
-                    .push(make_button("2", None))
-                    .push(make_button("3", None))
-                    .push(make_button("−", None))
+                    .push(make_button("±", None))
                     .push(make_button("!", None))
                     .spacing(space_s),
             )
             .push(
-                widget::row::with_capacity(5)
-                    .push(make_button("0", None))
-                    .push(make_button(".", None))
-                    .push(make_button("=", None))
+                widget::row::with_capacity(4)
+                    .push(make_button("7", None))
+                    .push(make_button("8", None))
+                    .push(make_button("9", None))
+                    .push(make_button("×", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(4)
+                    .push(make_button("4", None))
+                    .push(make_button("5", None))
+                    .push(make_button("6", None))
+                    .push(make_button("÷", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(4)
+                    .push(make_button("1", None))
+                    .push(make_button("2", None))
+                    .push(make_button("3", None))
                     .push(make_button("+", None))
-                    .push(make_button("Ans", None))
+                    .spacing(space_s),
+            )
+            .push(
+                widget::row::with_capacity(4)
+                    .push(make_button(".", None))
+                    .push(make_button("0", None))
+                    .push(make_button("=", None))
+                    .push(make_button("-", None))
                     .spacing(space_s),
             )
             .spacing(space_s)
@@ -373,7 +448,7 @@ impl cosmic::Application for AppModel {
             .spacing(space_s);
 
         let content: Element<_> = match self.nav.active_data::<Page>().unwrap() {
-            Page::Basic => widget::column::with_capacity(5)
+            Page::Basic => widget::column::with_capacity(6)
                 .push(history)
                 .push(input)
                 .push(result)
@@ -387,7 +462,7 @@ impl cosmic::Application for AppModel {
                 .spacing(space_s)
                 .into(),
 
-            Page::Advanced => widget::column::with_capacity(1)
+            Page::Advanced => widget::column::with_capacity(6)
                 .push(history)
                 .push(input)
                 .push(result)
@@ -406,18 +481,25 @@ impl cosmic::Application for AppModel {
                 .spacing(space_s)
                 .into(),
 
-            Page::Developer => {
-                let header = widget::row::with_capacity(2)
-                    .push(widget::text::title1(fl!("developer")))
-                    .align_y(Alignment::End)
-                    .spacing(space_s);
-
-                widget::column::with_capacity(1)
-                    .push(header)
-                    .push(calculator_mode)
-                    .spacing(space_s)
-                    .into()
-            }
+            Page::Developer => widget::column::with_capacity(6)
+                .push(history)
+                .push(input)
+                .push(result)
+                .push(
+                    widget::container(
+                        widget::row::with_capacity(3)
+                            .push(hexidecimal_keyboard)
+                            .push(basic_keyboard)
+                            .push(developer_keyboard)
+                            .spacing(space_s),
+                    )
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Center),
+                )
+                .push(widget::vertical_space().height(25))
+                .push(calculator_mode)
+                .spacing(space_s)
+                .into(),
         };
 
         autosize(
@@ -426,8 +508,8 @@ impl cosmic::Application for AppModel {
         )
         .min_width(660.0)
         .max_width(660.0)
-        .min_height(750.0)
-        .max_height(750.0)
+        .min_height(800.0)
+        .max_height(800.0)
         .into()
     }
 
@@ -439,9 +521,11 @@ impl cosmic::Application for AppModel {
         match message {
             Message::InputChanged(value) => {
                 self.cursor_pos = None;
+                // println!("Input changed: {value}");
                 if value.contains('=') || value.contains('\n') {
                     return self.evaluate_input();
                 }
+
                 let substituted = substitute(value);
                 // Reject a closing paren that would leave more closing than opening,
                 // matching the same rule applied by the ")" button.
@@ -499,7 +583,8 @@ impl cosmic::Application for AppModel {
                     }
                     "Ans" => {
                         if let Some((_, last_result)) = self.history.last().cloned() {
-                            let new_pos = insert_at_cursor(&mut self.input, &last_result, self.cursor_pos);
+                            let new_pos =
+                                insert_at_cursor(&mut self.input, &last_result, self.cursor_pos);
                             self.cursor_pos = Some(new_pos);
                             return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                         }
@@ -510,37 +595,43 @@ impl cosmic::Application for AppModel {
                         }
                     }
                     "Log" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "log()", self.cursor_pos);
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "log()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "Ln" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "ln()", self.cursor_pos);
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "ln()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "Log₂x" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "log₂()", self.cursor_pos);
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "log₂()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "1/x" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "1/()", self.cursor_pos);
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "1/()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "√" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "√()", self.cursor_pos);
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "√()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     "∛" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "∛()", self.cursor_pos);
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "∛()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
@@ -549,7 +640,8 @@ impl cosmic::Application for AppModel {
                     "x³" => self.input.push('³'),
                     "xʸ" => self.input.push('^'),
                     "Abs" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "abs()", self.cursor_pos);
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "abs()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
@@ -690,7 +782,7 @@ fn make_button(label: &str, handler: Option<Message>) -> Element<'_, Message> {
             .align_x(Horizontal::Center)
             .align_y(Vertical::Center),
     )
-    .width(60)
+    .width(70)
     .height(40)
     .on_press(text_handler)
     .into()
@@ -740,8 +832,14 @@ impl AppModel {
             .replace('×', "*")
             .replace('÷', "/")
             .replace('−', "-")
-            .replace('π', &std::f64::consts::PI.to_string())
-            .replace('e', &std::f64::consts::E.to_string())
+            .replace(
+                'π',
+                format!("({})", &std::f64::consts::PI.to_string()).as_str(),
+            )
+            .replace(
+                'e',
+                format!("({})", std::f64::consts::E.to_string()).as_str(),
+            )
             .replace('²', "^2")
             .replace('³', "^3")
             .replace('√', "sqrt")
