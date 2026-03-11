@@ -3,6 +3,7 @@
 use crate::config::Config;
 use crate::fl;
 use calclib::evaluator::evaluate;
+use calclib::validator::{CharSet, validate};
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -43,6 +44,8 @@ pub struct AppModel {
     result: String,
     /// Cursor position set by function buttons (e.g. inside `abs()`); None means append to end
     cursor_pos: Option<usize>,
+    /// Character set used for input validation on the developer page
+    char_set: CharSet,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -58,6 +61,7 @@ pub enum Message {
     ArrowRight,
     Home,
     End,
+    CharSetSelected(usize),
 }
 
 /// Create a COSMIC application from the app model
@@ -129,6 +133,8 @@ impl cosmic::Application for AppModel {
             }
         }
 
+        let char_set = CharSet::from_str(&config.char_set).unwrap_or_default();
+
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
             core,
@@ -142,6 +148,7 @@ impl cosmic::Application for AppModel {
             input: "".to_string(),
             result: "0".to_string(),
             cursor_pos: None,
+            char_set,
         };
 
         // Create a startup command that sets the window title and size.
@@ -260,72 +267,73 @@ impl cosmic::Application for AppModel {
         let advanced_keyboard: Element<_> = widget::column::with_capacity(1)
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("Log", None))
-                    .push(make_button("Ln", None))
+                    .push(make_button("Log"))
+                    .push(make_button("Ln"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("1/x", None))
-                    .push(make_button("Log₂x", None))
+                    .push(make_button("1/x"))
+                    .push(make_button("Log₂x"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("√", None))
-                    .push(make_button("∛", None))
+                    .push(make_button("√"))
+                    .push(make_button("∛"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("x²", None))
-                    .push(make_button("x³", None))
+                    .push(make_button("x²"))
+                    .push(make_button("x³"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("xʸ", None))
-                    .push(make_button("Abs", None))
+                    .push(make_button("xʸ"))
+                    .push(make_button("Abs"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("π", None))
-                    .push(make_button("e", None))
+                    .push(make_button("π"))
+                    .push(make_button("e"))
                     .spacing(space_s),
             )
             .spacing(space_s)
             .into();
 
+        let hex_enabled = self.char_set == CharSet::Hexadecimal;
         let hexidecimal_keyboard: Element<_> = widget::column::with_capacity(1)
             .push(
                 widget::row::with_capacity(1)
-                    .push(make_button("A", None))
+                    .push(make_button_enabled("A", hex_enabled))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(1)
-                    .push(make_button("B", None))
+                    .push(make_button_enabled("B", hex_enabled))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(1)
-                    .push(make_button("C", None))
+                    .push(make_button_enabled("C", hex_enabled))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(1)
-                    .push(make_button("D", None))
+                    .push(make_button_enabled("D", hex_enabled))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(1)
-                    .push(make_button("E", None))
+                    .push(make_button_enabled("E", hex_enabled))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(1)
-                    .push(make_button("F", None))
+                    .push(make_button_enabled("F", hex_enabled))
                     .spacing(space_s),
             )
             .spacing(space_s)
@@ -334,107 +342,108 @@ impl cosmic::Application for AppModel {
         let developer_keyboard: Element<_> = widget::column::with_capacity(1)
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("AND", None))
-                    .push(make_button("OR", None))
+                    .push(make_button("AND"))
+                    .push(make_button("OR"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("NAND", None))
-                    .push(make_button("NOR", None))
+                    .push(make_button("NAND"))
+                    .push(make_button("NOR"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("XNOR", None))
-                    .push(make_button("XOR", None))
+                    .push(make_button("XNOR"))
+                    .push(make_button("XOR"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("<<", None))
-                    .push(make_button(">>", None))
+                    .push(make_button("<<"))
+                    .push(make_button(">>"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(2)
-                    .push(make_button("MOD", None))
-                    .push(make_button("NOT", None))
+                    .push(make_button("MOD"))
+                    .push(make_button("NOT"))
                     .spacing(space_s),
             )
             .spacing(space_s)
             .into();
 
+        let dec_enabled = self.char_set != CharSet::Binary;
         let basic_keyboard: Element<_> = widget::column::with_capacity(1)
             .push(
                 widget::row::with_capacity(4)
-                    .push(make_button("AC", None))
-                    .push(make_button("C", None))
-                    .push(make_button("⌫", None))
-                    .push(make_button("Ans", None))
+                    .push(make_button("AC"))
+                    .push(make_button("C"))
+                    .push(make_button("⌫"))
+                    .push(make_button("Ans"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(4)
-                    .push(make_button("(", None))
-                    .push(make_button(")", None))
-                    .push(make_button("±", None))
-                    .push(make_button("!", None))
+                    .push(make_button("("))
+                    .push(make_button(")"))
+                    .push(make_button("±"))
+                    .push(make_button("!"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(4)
-                    .push(make_button("7", None))
-                    .push(make_button("8", None))
-                    .push(make_button("9", None))
-                    .push(make_button("×", None))
+                    .push(make_button_enabled("7", dec_enabled))
+                    .push(make_button_enabled("8", dec_enabled))
+                    .push(make_button_enabled("9", dec_enabled))
+                    .push(make_button("×"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(4)
-                    .push(make_button("4", None))
-                    .push(make_button("5", None))
-                    .push(make_button("6", None))
-                    .push(make_button("÷", None))
+                    .push(make_button_enabled("4", dec_enabled))
+                    .push(make_button_enabled("5", dec_enabled))
+                    .push(make_button_enabled("6", dec_enabled))
+                    .push(make_button("÷"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(4)
-                    .push(make_button("1", None))
-                    .push(make_button("2", None))
-                    .push(make_button("3", None))
-                    .push(make_button("+", None))
+                    .push(make_button("1"))
+                    .push(make_button_enabled("2", dec_enabled))
+                    .push(make_button_enabled("3", dec_enabled))
+                    .push(make_button("+"))
                     .spacing(space_s),
             )
             .push(
                 widget::row::with_capacity(4)
-                    .push(make_button(".", None))
-                    .push(make_button("0", None))
-                    .push(make_button("=", None))
-                    .push(make_button("-", None))
+                    .push(make_button("."))
+                    .push(make_button("0"))
+                    .push(make_button("="))
+                    .push(make_button("-"))
                     .spacing(space_s),
             )
             .spacing(space_s)
             .into();
 
-        let calculator_mode: Element<_> = widget::column::with_capacity(1)
-            .push(
-                widget::row::with_capacity(3)
-                    .push(icon_button_view(
-                        "basic".to_string(),
-                        include_bytes!("../resources/basic.svg"),
-                    ))
-                    .push(icon_button_view(
-                        "advanced".to_string(),
-                        include_bytes!("../resources/advanced.svg"),
-                    ))
-                    .push(icon_button_view(
-                        "developer".to_string(),
-                        include_bytes!("../resources/developer.svg"),
-                    ))
-                    .spacing(space_s),
-            )
-            .spacing(space_s)
+        let charset_options: &'static [&'static str] = &["Decimal", "Hexadecimal", "Binary"];
+        let charset_selected: Option<usize> = Some(match self.char_set {
+            CharSet::Decimal => 0,
+            CharSet::Hexadecimal => 1,
+            CharSet::Binary => 2,
+        });
+
+        let calculator_mode: Element<_> = mode_buttons_row(space_s).into();
+
+        let developer_mode_row: Element<_> = widget::row::with_capacity(3)
+            .push(mode_buttons_row(space_s))
+            .push(widget::horizontal_space())
+            .push(widget::dropdown(
+                charset_options,
+                charset_selected,
+                Message::CharSetSelected,
+            ))
+            .align_y(Alignment::Center)
             .into();
 
         let result = widget::row::with_capacity(1)
@@ -497,7 +506,7 @@ impl cosmic::Application for AppModel {
                     .align_x(Horizontal::Center),
                 )
                 .push(widget::vertical_space().height(25))
-                .push(calculator_mode)
+                .push(developer_mode_row)
                 .spacing(space_s)
                 .into(),
         };
@@ -527,13 +536,18 @@ impl cosmic::Application for AppModel {
                 }
 
                 let substituted = substitute(value);
+                let char_set = self.char_set;
+                let filtered: String = substituted
+                    .chars()
+                    .filter(|c| validate(c, char_set))
+                    .collect();
                 // Reject a closing paren that would leave more closing than opening,
                 // matching the same rule applied by the ")" button.
-                if get_paren_count(&substituted) < 0 {
+                if get_paren_count(&filtered) < 0 {
                     // Revert: leave self.input unchanged; the widget will re-sync on
                     // the next frame.
                 } else {
-                    self.input = substituted;
+                    self.input = filtered;
                 }
             }
             Message::CopyResultToInput(result) => {
@@ -708,6 +722,15 @@ impl cosmic::Application for AppModel {
             Message::End => {
                 self.cursor_pos = None;
             }
+            Message::CharSetSelected(index) => {
+                self.char_set = match index {
+                    0 => CharSet::Decimal,
+                    1 => CharSet::Hexadecimal,
+                    2 => CharSet::Binary,
+                    _ => CharSet::Decimal,
+                };
+                self.save_char_set();
+            }
         }
         Task::none()
     }
@@ -715,6 +738,10 @@ impl cosmic::Application for AppModel {
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Self::Message>> {
         // Activate the page in the model.
         self.nav.activate(id);
+        if !matches!(self.nav.active_data::<Page>(), Some(Page::Developer)) {
+            self.char_set = CharSet::Decimal;
+            self.save_char_set();
+        }
 
         // Persist the selected page to config.
         if let Some(page) = self.nav.active_data::<Page>() {
@@ -770,8 +797,8 @@ fn substitute(input: String) -> String {
     input.replace('*', "×").replace('/', "÷").replace('-', "−")
 }
 
-fn make_button(label: &str, handler: Option<Message>) -> Element<'_, Message> {
-    let text_handler = handler.unwrap_or(Message::KeyPressed(label.to_string()));
+fn make_button(label: &str) -> Element<'_, Message> {
+    let text_handler = Message::KeyPressed(label.to_string());
 
     button::custom(
         text(label)
@@ -786,6 +813,43 @@ fn make_button(label: &str, handler: Option<Message>) -> Element<'_, Message> {
     .height(40)
     .on_press(text_handler)
     .into()
+}
+
+fn make_button_enabled(label: &str, enabled: bool) -> Element<'_, Message> {
+    let btn = button::custom(
+        text(label)
+            .size(18)
+            .font(cosmic::font::bold())
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Horizontal::Center)
+            .align_y(Vertical::Center),
+    )
+    .width(70)
+    .height(40);
+
+    if enabled {
+        btn.on_press(Message::KeyPressed(label.to_string())).into()
+    } else {
+        btn.into()
+    }
+}
+
+fn mode_buttons_row(space_s: u16) -> widget::Row<'static, Message> {
+    widget::row::with_capacity(3)
+        .push(icon_button_view(
+            "basic".to_string(),
+            include_bytes!("../resources/basic.svg"),
+        ))
+        .push(icon_button_view(
+            "advanced".to_string(),
+            include_bytes!("../resources/advanced.svg"),
+        ))
+        .push(icon_button_view(
+            "developer".to_string(),
+            include_bytes!("../resources/developer.svg"),
+        ))
+        .spacing(space_s)
 }
 
 // Function to create the button with an SVG icon
@@ -822,6 +886,13 @@ impl AppModel {
             self.set_window_title(window_title, id)
         } else {
             Task::none()
+        }
+    }
+
+    fn save_char_set(&mut self) {
+        self.config.char_set = self.char_set.as_str().to_string();
+        if let Some(ref handler) = self.config_handler {
+            let _ = self.config.write_entry(handler);
         }
     }
 
