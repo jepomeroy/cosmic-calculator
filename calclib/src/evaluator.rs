@@ -1,4 +1,5 @@
 use crate::ast::Expression::{self, Function, Infix, Number, Prefix, Unary};
+use crate::numformat::NumberFormat;
 use crate::parser::Parser;
 use crate::token::{FunctionType, Token};
 use crate::utils::{change_sign, is_integer, is_negative};
@@ -34,14 +35,14 @@ impl EvaluationResult {
     }
 }
 
-pub fn evaluate(input: String) -> Result<EvaluationResult, String> {
-    let mut parser = Parser::new();
+pub fn evaluate(input: String, number_format: NumberFormat) -> Result<EvaluationResult, String> {
+    let mut parser = Parser::new(number_format);
     let parse_val = parser.parse(input);
 
     match parse_val {
         Err(e) => Err(e),
         Ok(v) => {
-            // println!("Parser output: {:?}", v);
+            println!("Parser output: {:?}", v);
             match v {
                 Some(ex) => evaluate_expression(ex),
                 None => Err("Invalid expression".to_string()),
@@ -191,7 +192,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_int_expression() {
-        let result = evaluate("42".to_string());
+        let result = evaluate("42".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert!(is_integer(eval_result.value));
@@ -208,7 +209,7 @@ mod tests {
         ];
 
         for i in input {
-            let result = evaluate(i.0);
+            let result = evaluate(i.0, NumberFormat::Decimal);
             assert!(result.is_ok());
             let eval_result = result.unwrap();
             assert!(is_integer(eval_result.value));
@@ -226,7 +227,7 @@ mod tests {
         ];
 
         for i in input {
-            let result = evaluate(i.0);
+            let result = evaluate(i.0, NumberFormat::Decimal);
             assert!(result.is_ok());
             let eval_result = result.unwrap();
             assert!(is_integer(eval_result.value));
@@ -236,14 +237,14 @@ mod tests {
 
     #[test]
     fn test_evaluate_division_by_zero() {
-        let result = evaluate("10/0".to_string());
+        let result = evaluate("10/0".to_string(), NumberFormat::Decimal);
         assert!(result.is_err());
         assert_eq!(result.err().unwrap(), "Division by zero".to_string());
     }
 
     #[test]
     fn test_evaluate_nested_expression() {
-        let result = evaluate("2*(3+4)".to_string());
+        let result = evaluate("2*(3+4)".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert!(is_integer(eval_result.value));
@@ -252,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_factoriacl_expressions() {
-        let result = evaluate("5!".to_string());
+        let result = evaluate("5!".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert!(is_integer(eval_result.value));
@@ -261,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_factoriacl_with_negative_expressions() {
-        let result = evaluate("-5!".to_string());
+        let result = evaluate("-5!".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert!(is_integer(eval_result.value));
@@ -270,7 +271,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_factoriacl_float_expressions() {
-        let result = evaluate("2.3!".to_string());
+        let result = evaluate("2.3!".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert!(!is_integer(eval_result.value));
@@ -279,7 +280,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_factoriacl_negative_float_expressions() {
-        let result = evaluate("-2.3!".to_string());
+        let result = evaluate("-2.3!".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert!(!is_integer(eval_result.value));
@@ -288,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_factoriacl_limit_expressions() {
-        let result = evaluate("170!".to_string());
+        let result = evaluate("170!".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert!(is_integer(eval_result.value));
@@ -298,7 +299,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_factoriacl_overflow_expressions() {
-        let result = evaluate("171!".to_string());
+        let result = evaluate("171!".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert!(!is_integer(eval_result.value));
@@ -307,7 +308,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_factoriacl_negative_limit_expressions() {
-        let result = evaluate("-170!".to_string());
+        let result = evaluate("-170!".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert!(is_integer(eval_result.value));
@@ -317,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_factoriacl_negative_overflow_expressions() {
-        let result = evaluate("-171!".to_string());
+        let result = evaluate("-171!".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert!(!is_integer(eval_result.value));
@@ -334,7 +335,7 @@ mod tests {
 
     #[test]
     fn test_evaluate_type_mismatch() {
-        let result = evaluate("2+3.5".to_string());
+        let result = evaluate("2+3.5".to_string(), NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
         assert_eq!(eval_result.value, Some(5.5));
@@ -350,7 +351,7 @@ mod tests {
         ];
 
         for (input, expected) in inputs {
-            let result = evaluate(input.to_string());
+            let result = evaluate(input.to_string(), NumberFormat::Decimal);
             assert!(result.is_ok());
             let eval_result = result.unwrap();
             assert_eq!(eval_result.value, expected);
@@ -370,7 +371,7 @@ mod tests {
         ];
 
         for (input, expected) in inputs {
-            let result = evaluate(input.to_string());
+            let result = evaluate(input.to_string(), NumberFormat::Decimal);
             assert!(result.is_ok());
             let eval_result = result.unwrap();
             assert_eq!(eval_result.value, expected);

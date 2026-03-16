@@ -1,53 +1,18 @@
-use std::fmt::Display;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum CharSet {
-    #[default]
-    Decimal,
-    Hexadecimal,
-    Binary,
-}
-
-impl Display for CharSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CharSet::Decimal => write!(f, "Decimal"),
-            CharSet::Hexadecimal => write!(f, "Hexadecimal"),
-            CharSet::Binary => write!(f, "Binary"),
-        }
-    }
-}
-
-impl CharSet {
-    pub fn as_str(&self) -> &str {
-        match self {
-            CharSet::Decimal => "decimal",
-            CharSet::Hexadecimal => "hexadecimal",
-            CharSet::Binary => "binary",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Option<CharSet> {
-        match s {
-            "decimal" => Some(CharSet::Decimal),
-            "hexadecimal" => Some(CharSet::Hexadecimal),
-            "binary" => Some(CharSet::Binary),
-            _ => None,
-        }
-    }
-}
+use crate::numformat::NumberFormat;
 
 /// Validates if the input character is one of the allowed mathematical symbols or digits.
-pub fn validate(input: &char, char_set: CharSet) -> bool {
+pub fn validate(input: &char, number_format: NumberFormat) -> bool {
     let symbols_match = matches!(
         input,
         '+' | '-' | '*' | '/' | '(' | ')' | '^' | '.' | '=' | '!' | '×' | '÷' | '−'
     );
 
-    match char_set {
-        CharSet::Decimal => symbols_match || matches!(input, '0'..='9'),
-        CharSet::Hexadecimal => symbols_match || matches!(input, '0'..='9' | 'a'..='f' | 'A'..='F'),
-        CharSet::Binary => symbols_match || matches!(input, '0' | '1'),
+    match number_format {
+        NumberFormat::Decimal => symbols_match || matches!(input, '0'..='9'),
+        NumberFormat::Hexadecimal => {
+            symbols_match || matches!(input, '0'..='9' | 'a'..='f' | 'A'..='F')
+        }
+        NumberFormat::Binary => symbols_match || matches!(input, '0' | '1'),
     }
 }
 
@@ -62,7 +27,7 @@ mod tests {
 
         for ch in valid_chars {
             assert!(
-                validate(&ch, CharSet::Binary),
+                validate(&ch, NumberFormat::Binary),
                 "Character '{}' should be valid",
                 ch
             );
@@ -82,7 +47,7 @@ mod tests {
 
         for ch in invalid_chars {
             assert!(
-                !validate(&ch, CharSet::Binary),
+                !validate(&ch, NumberFormat::Binary),
                 "Character '{}' should be invalid",
                 ch
             );
@@ -98,7 +63,7 @@ mod tests {
 
         for ch in valid_chars {
             assert!(
-                validate(&ch, CharSet::Decimal),
+                validate(&ch, NumberFormat::Decimal),
                 "Character '{}' should be valid",
                 ch
             );
@@ -118,7 +83,7 @@ mod tests {
 
         for ch in invalid_chars {
             assert!(
-                !validate(&ch, CharSet::Decimal),
+                !validate(&ch, NumberFormat::Decimal),
                 "Character '{}' should be invalid",
                 ch
             );
@@ -135,7 +100,7 @@ mod tests {
 
         for ch in valid_chars {
             assert!(
-                validate(&ch, CharSet::Hexadecimal),
+                validate(&ch, NumberFormat::Hexadecimal),
                 "Character '{}' should be valid",
                 ch
             );
@@ -154,7 +119,7 @@ mod tests {
 
         for ch in invalid_chars {
             assert!(
-                !validate(&ch, CharSet::Hexadecimal),
+                !validate(&ch, NumberFormat::Hexadecimal),
                 "Character '{}' should be invalid",
                 ch
             );

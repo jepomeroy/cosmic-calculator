@@ -1,11 +1,13 @@
 use crate::{
     ast::Expression,
     lexer::Lexer,
-    token::{FunctionType, Token, LOWEST, PREFIX},
+    numformat::NumberFormat,
+    token::{FunctionType, LOWEST, PREFIX, Token},
 };
 
 pub struct Parser {
     lexer: Lexer,
+    number_format: NumberFormat,
     curr_token: Option<Token>,
     peek_token: Option<Token>,
     found_eof: bool,
@@ -13,13 +15,14 @@ pub struct Parser {
 
 impl Default for Parser {
     fn default() -> Self {
-        Self::new()
+        Self::new(NumberFormat::Decimal)
     }
 }
 impl Parser {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(number_format: NumberFormat) -> Self {
         Self {
-            lexer: Lexer::new("".to_string()),
+            lexer: Lexer::new("".to_string(), number_format.clone()),
+            number_format,
             curr_token: None,
             peek_token: None,
             found_eof: false,
@@ -32,7 +35,7 @@ impl Parser {
     }
 
     pub(crate) fn parse(&mut self, input: String) -> Result<Option<Expression>, String> {
-        self.lexer = Lexer::new(input);
+        self.lexer = Lexer::new(input, self.number_format.clone());
         self.found_eof = false;
         self.next_token();
         self.next_token();
@@ -174,7 +177,7 @@ mod tests {
     #[test]
     fn test_parser_empty() {
         let input = vec![""];
-        let mut p = Parser::new();
+        let mut p = Parser::new(NumberFormat::Decimal);
         for expr in input {
             let result = p.parse(expr.to_string());
             assert_eq!(result, Ok(None));
@@ -189,7 +192,7 @@ mod tests {
             ("0", 0.0),
             ("1234567890", 1234567890.0),
         ];
-        let mut p = Parser::new();
+        let mut p = Parser::default();
         for expr in input {
             let result = p.parse(expr.0.to_string());
 
@@ -200,7 +203,7 @@ mod tests {
     #[test]
     fn test_simple_negative_literals() {
         let input = vec![("-5", 5.0), ("-42", 42.0), ("-1234567890", 1234567890.0)];
-        let mut p = Parser::new();
+        let mut p = Parser::default();
         for expr in input {
             let result = p.parse(expr.0.to_string());
 
@@ -219,7 +222,7 @@ mod tests {
     #[test]
     fn test_parser_incomplete() {
         let input = vec!["-", "(399", "*", "3-", "-5+"];
-        let mut p = Parser::new();
+        let mut p = Parser::default();
         for expr in input {
             let result = p.parse(expr.to_string());
             assert_eq!(result, Ok(None));
@@ -264,7 +267,7 @@ mod tests {
             ),
         ];
 
-        let mut p = Parser::new();
+        let mut p = Parser::default();
         for (expr, expected_tokens) in input {
             let result = p.parse(expr.to_string());
             assert_eq!(result, expected_tokens);
@@ -341,7 +344,7 @@ mod tests {
             ),
         ];
 
-        let mut p = Parser::new();
+        let mut p = Parser::default();
         for (expr, expected_tokens) in input {
             let result = p.parse(expr.to_string());
             assert_eq!(result, expected_tokens);
@@ -374,7 +377,7 @@ mod tests {
             ),
         ];
 
-        let mut p = Parser::new();
+        let mut p = Parser::default();
         for (expr, expected_tokens) in input {
             let result = p.parse(expr.to_string());
             assert_eq!(result, expected_tokens);

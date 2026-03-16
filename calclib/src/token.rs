@@ -17,7 +17,6 @@ pub(crate) enum Token {
     Divide,
     LParen,
     RParen,
-    Percent,
     Caret,
     Exclamation,
     Function(FunctionType),
@@ -37,7 +36,7 @@ impl Token {
         match self {
             Token::Eof => EOF,
             Token::Plus | Token::Minus => ADD,
-            Token::Multiply | Token::Divide | Token::Percent | Token::Exclamation => MULTIPLY,
+            Token::Multiply | Token::Divide | Token::Exclamation => MULTIPLY,
             Token::Caret => EXPONENT,
             Token::LParen => PARENTHETICAL,
             _ => LOWEST,

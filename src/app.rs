@@ -3,7 +3,8 @@
 use crate::config::Config;
 use crate::fl;
 use calclib::evaluator::evaluate;
-use calclib::validator::{CharSet, validate};
+use calclib::numformat::NumberFormat;
+use calclib::validator::validate;
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::{Horizontal, Vertical};
@@ -45,7 +46,7 @@ pub struct AppModel {
     /// Cursor position set by function buttons (e.g. inside `abs()`); None means append to end
     cursor_pos: Option<usize>,
     /// Character set used for input validation on the developer page
-    char_set: CharSet,
+    number_format: NumberFormat,
 }
 
 /// Messages emitted by the application and its widgets.
@@ -61,7 +62,7 @@ pub enum Message {
     ArrowRight,
     Home,
     End,
-    CharSetSelected(usize),
+    NumberFormatSelected(usize),
 }
 
 /// Create a COSMIC application from the app model
@@ -133,7 +134,7 @@ impl cosmic::Application for AppModel {
             }
         }
 
-        let char_set = CharSet::from_str(&config.char_set).unwrap_or_default();
+        let number_format = NumberFormat::from_str(&config.number_format).unwrap_or_default();
 
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
@@ -148,7 +149,7 @@ impl cosmic::Application for AppModel {
             input: "".to_string(),
             result: "0".to_string(),
             cursor_pos: None,
-            char_set,
+            number_format: NumberFormat::Decimal,
         };
 
         // Create a startup command that sets the window title and size.
@@ -304,7 +305,7 @@ impl cosmic::Application for AppModel {
             .spacing(space_s)
             .into();
 
-        let hex_enabled = self.char_set == CharSet::Hexadecimal;
+        let hex_enabled = self.number_format == NumberFormat::Hexadecimal;
         let hexidecimal_keyboard: Element<_> = widget::column::with_capacity(1)
             .push(
                 widget::row::with_capacity(1)
@@ -373,7 +374,7 @@ impl cosmic::Application for AppModel {
             .spacing(space_s)
             .into();
 
-        let dec_enabled = self.char_set != CharSet::Binary;
+        let dec_enabled = self.number_format != NumberFormat::Binary;
         let basic_keyboard: Element<_> = widget::column::with_capacity(1)
             .push(
                 widget::row::with_capacity(4)
@@ -427,10 +428,10 @@ impl cosmic::Application for AppModel {
             .into();
 
         let charset_options: &'static [&'static str] = &["Decimal", "Hexadecimal", "Binary"];
-        let charset_selected: Option<usize> = Some(match self.char_set {
-            CharSet::Decimal => 0,
-            CharSet::Hexadecimal => 1,
-            CharSet::Binary => 2,
+        let charset_selected: Option<usize> = Some(match self.number_format {
+            NumberFormat::Decimal => 0,
+            NumberFormat::Hexadecimal => 1,
+            NumberFormat::Binary => 2,
         });
 
         let calculator_mode: Element<_> = mode_buttons_row(space_s).into();
@@ -441,7 +442,7 @@ impl cosmic::Application for AppModel {
             .push(widget::dropdown(
                 charset_options,
                 charset_selected,
-                Message::CharSetSelected,
+                Message::NumberFormatSelected,
             ))
             .align_y(Alignment::Center)
             .into();
@@ -536,10 +537,10 @@ impl cosmic::Application for AppModel {
                 }
 
                 let substituted = substitute(value);
-                let char_set = self.char_set;
+                let number_format = self.number_format;
                 let filtered: String = substituted
                     .chars()
-                    .filter(|c| validate(c, char_set))
+                    .filter(|c| validate(c, number_format))
                     .collect();
                 // Reject a closing paren that would leave more closing than opening,
                 // matching the same rule applied by the ")" button.
@@ -722,14 +723,14 @@ impl cosmic::Application for AppModel {
             Message::End => {
                 self.cursor_pos = None;
             }
-            Message::CharSetSelected(index) => {
-                self.char_set = match index {
-                    0 => CharSet::Decimal,
-                    1 => CharSet::Hexadecimal,
-                    2 => CharSet::Binary,
-                    _ => CharSet::Decimal,
+            Message::NumberFormatSelected(index) => {
+                self.number_format = match index {
+                    0 => NumberFormat::Decimal,
+                    1 => NumberFormat::Hexadecimal,
+                    2 => NumberFormat::Binary,
+                    _ => NumberFormat::Decimal,
                 };
-                self.save_char_set();
+                self.save_number_format();
             }
         }
         Task::none()
@@ -739,8 +740,8 @@ impl cosmic::Application for AppModel {
         // Activate the page in the model.
         self.nav.activate(id);
         if !matches!(self.nav.active_data::<Page>(), Some(Page::Developer)) {
-            self.char_set = CharSet::Decimal;
-            self.save_char_set();
+            self.number_format = NumberFormat::Decimal;
+            self.save_number_format();
         }
 
         // Persist the selected page to config.
@@ -889,8 +890,8 @@ impl AppModel {
         }
     }
 
-    fn save_char_set(&mut self) {
-        self.config.char_set = self.char_set.as_str().to_string();
+    fn save_number_format(&mut self) {
+        self.config.number_format = self.number_format.as_str().to_string();
         if let Some(ref handler) = self.config_handler {
             let _ = self.config.write_entry(handler);
         }
@@ -917,7 +918,7 @@ impl AppModel {
             .replace('∛', "cbrt")
             .replace("log₂", "logtwo");
 
-        match evaluate(expression) {
+        match evaluate(expression, self.number_format) {
             Ok(result) => {
                 self.result = result.value();
                 self.history.push((self.input.clone(), self.result.clone()));
