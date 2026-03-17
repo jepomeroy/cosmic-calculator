@@ -11,6 +11,10 @@ pub struct EvaluationResult {
 }
 
 impl EvaluationResult {
+    pub fn f64_value(&self) -> Option<f64> {
+        self.value
+    }
+
     pub fn int_value(&self) -> Option<i64> {
         if is_integer(self.value) && self.value.map_or(false, |f| f.abs() <= i64::MAX as f64) {
             return self.value.map(|f| f.trunc() as i64);

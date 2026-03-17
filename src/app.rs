@@ -37,12 +37,12 @@ pub struct AppModel {
     config: Config,
     /// Handle to the config context for persisting changes.
     config_handler: Option<cosmic_config::Config>,
-    /// Calculator history (expression, result) pairs
-    history: Vec<(String, String)>,
+    /// Calculator history as (expression, f64 result) pairs
+    history: Vec<(String, f64)>,
     /// Calculator input
     input: String,
-    /// Calculator result
-    result: String,
+    /// Calculator result value, or an error string
+    result: Result<f64, String>,
     /// Cursor position set by function buttons (e.g. inside `abs()`); None means append to end
     cursor_pos: Option<usize>,
     /// Character set used for input validation on the developer page
@@ -147,9 +147,9 @@ impl cosmic::Application for AppModel {
             config_handler,
             history: Vec::new(),
             input: "".to_string(),
-            result: "0".to_string(),
+            result: Ok(0.0),
             cursor_pos: None,
-            number_format: NumberFormat::Decimal,
+            number_format,
         };
 
         // Create a startup command that sets the window title and size.
@@ -188,7 +188,26 @@ impl cosmic::Application for AppModel {
 
     fn subscription(&self) -> cosmic::iced::Subscription<Message> {
         cosmic::iced::event::listen_with(|event, _status, _window_id| {
-            if let cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) = event {
+            if let cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key,
+                modifiers,
+                ..
+            }) = event
+            {
+                if modifiers.control() {
+                    match key.as_ref() {
+                        keyboard::Key::Character("d") => {
+                            return Some(Message::NumberFormatSelected(0));
+                        }
+                        keyboard::Key::Character("h") => {
+                            return Some(Message::NumberFormatSelected(1));
+                        }
+                        keyboard::Key::Character("b") => {
+                            return Some(Message::NumberFormatSelected(2));
+                        }
+                        _ => {}
+                    }
+                }
                 match key {
                     keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
                         Some(Message::ArrowLeft)
@@ -217,10 +236,12 @@ impl cosmic::Application for AppModel {
         let history_items: Vec<Element<'_, Self::Message>> = self
             .history
             .iter()
-            .map(|(expr, result)| {
+            .map(|(expr, value)| {
+                let result_str = format_f64(*value, self.number_format);
+                let input_str = format_f64(*value, self.number_format);
                 widget::row::with_capacity(2)
                     .push(
-                        text(format!("{} = {}", expr, result))
+                        text(format!("{} = {}", expr, result_str))
                             .size(14)
                             .width(Length::Fill)
                             .align_x(Horizontal::Right),
@@ -228,7 +249,7 @@ impl cosmic::Application for AppModel {
                     .push(widget::tooltip(
                         button::icon(icon::from_name("edit-copy-symbolic").size(14))
                             .extra_small()
-                            .on_press(Message::CopyResultToInput(result.clone())),
+                            .on_press(Message::CopyResultToInput(input_str)),
                         text("Copy to input"),
                         widget::tooltip::Position::Left,
                     ))
@@ -447,9 +468,13 @@ impl cosmic::Application for AppModel {
             .align_y(Alignment::Center)
             .into();
 
+        let result_display = match &self.result {
+            Ok(value) => format_f64(*value, self.number_format),
+            Err(err) => err.clone(),
+        };
         let result = widget::row::with_capacity(1)
             .push(
-                text(self.result.as_str())
+                text(result_display)
                     .size(24)
                     .width(Length::Fill)
                     .align_x(Horizontal::Right),
@@ -563,13 +588,13 @@ impl cosmic::Application for AppModel {
                     "AC" => {
                         self.history.clear();
                         self.input.clear();
-                        self.result = "0".to_string();
+                        self.result = Ok(0.0);
                         self.cursor_pos = None;
                         return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
                     }
                     "C" => {
                         self.input.clear();
-                        self.result = "0".to_string();
+                        self.result = Ok(0.0);
                         self.cursor_pos = None;
                         return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
                     }
@@ -597,9 +622,9 @@ impl cosmic::Application for AppModel {
                         ]);
                     }
                     "Ans" => {
-                        if let Some((_, last_result)) = self.history.last().cloned() {
-                            let new_pos =
-                                insert_at_cursor(&mut self.input, &last_result, self.cursor_pos);
+                        if let Some((_, last_value)) = self.history.last().cloned() {
+                            let text = format_f64(last_value, self.number_format);
+                            let new_pos = insert_at_cursor(&mut self.input, &text, self.cursor_pos);
                             self.cursor_pos = Some(new_pos);
                             return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                         }
@@ -731,6 +756,16 @@ impl cosmic::Application for AppModel {
                     _ => NumberFormat::Decimal,
                 };
                 self.save_number_format();
+                // When triggered by keyboard shortcut, navigate to Developer page
+                if !matches!(self.nav.active_data::<Page>(), Some(Page::Developer)) {
+                    let dev_id = self
+                        .nav
+                        .iter()
+                        .find(|&id| matches!(self.nav.data::<Page>(id), Some(Page::Developer)));
+                    if let Some(id) = dev_id {
+                        return self.on_nav_select(id);
+                    }
+                }
             }
         }
         Task::none()
@@ -790,6 +825,32 @@ fn insert_at_cursor(input: &mut String, text: &str, cursor_pos: Option<usize>) -
             input.push_str(text);
             input.chars().count()
         }
+    }
+}
+
+/// Format an f64 result for display, respecting the active number format.
+fn format_f64(value: f64, format: NumberFormat) -> String {
+    if value.fract() == 0.0 && value.is_finite() && value.abs() <= i64::MAX as f64 {
+        let n = value as i64;
+        match format {
+            NumberFormat::Decimal => format!("{}", n),
+            NumberFormat::Hexadecimal => {
+                if n < 0 {
+                    format!("-{:X}", n.unsigned_abs())
+                } else {
+                    format!("{:X}", n)
+                }
+            }
+            NumberFormat::Binary => {
+                if n < 0 {
+                    format!("-{:b}", n.unsigned_abs())
+                } else {
+                    format!("{:b}", n)
+                }
+            }
+        }
+    } else {
+        format!("{}", value)
     }
 }
 
@@ -920,8 +981,9 @@ impl AppModel {
 
         match evaluate(expression, self.number_format) {
             Ok(result) => {
-                self.result = result.value();
-                self.history.push((self.input.clone(), self.result.clone()));
+                let value = result.f64_value().unwrap_or(f64::NAN);
+                self.history.push((self.input.clone(), value));
+                self.result = Ok(value);
                 self.input.clear();
                 self.cursor_pos = None;
                 cosmic::iced::widget::scrollable::snap_to(
@@ -930,7 +992,7 @@ impl AppModel {
                 )
             }
             Err(err) => {
-                self.result = err;
+                self.result = Err(err);
                 Task::none()
             }
         }
