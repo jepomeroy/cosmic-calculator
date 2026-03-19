@@ -9,22 +9,15 @@ pub(crate) fn change_sign(num: f64, make_negative: bool) -> f64 {
 /// Returns `true` if `num` is `Some` value whose fractional part is zero.
 ///
 /// Returns `false` for `None` or any value with a non-zero fractional part.
-pub(crate) fn is_integer(num: Option<f64>) -> bool {
-    if let Some(f) = num {
-        return f.fract() == 0.0;
-    }
-    false
+pub(crate) fn is_integer(num: f64) -> bool {
+    num.fract() == 0.0
 }
 
 /// Returns `true` if `num` is `Some` value that is strictly less than zero.
 ///
 /// Returns `false` for `None`, zero, or any positive value.
-pub(crate) fn is_negative(num: Option<f64>) -> bool {
-    if let Some(x) = num {
-        return x < 0.0;
-    }
-
-    false
+pub(crate) fn is_negative(num: f64) -> bool {
+    num < 0.0
 }
 
 /// Converts a binary string to an `f64` by parsing it as an unsigned integer.
@@ -64,19 +57,18 @@ mod test {
     #[test]
     fn test_is_integer() {
         let inputs = vec![
-            (Some(1.0), true),
-            (Some(1.23), false),
-            (Some(-1.0), true),
-            (Some(-1.999), false),
-            (Some(0.0), true),
-            (None, false),
+            (1.0, true),
+            (1.23, false),
+            (-1.0, true),
+            (-1.999, false),
+            (0.0, true),
             // Large exact integer
-            (Some(1_000_000_000_000.0), true),
+            (1_000_000_000_000.0, true),
             // Infinity has no fractional part but is not a meaningful integer
-            (Some(f64::INFINITY), false),
-            (Some(f64::NEG_INFINITY), false),
+            (f64::INFINITY, false),
+            (f64::NEG_INFINITY, false),
             // NaN comparisons always return false
-            (Some(f64::NAN), false),
+            (f64::NAN, false),
         ];
 
         for i in inputs {
@@ -87,16 +79,15 @@ mod test {
     #[test]
     fn test_is_negative() {
         let inputs = vec![
-            (Some(1.0), false),
-            (Some(-1.0), true),
-            (Some(0.0), false),
-            (None, false),
+            (1.0, false),
+            (-1.0, true),
+            (0.0, false),
             // Negative zero is not less than zero in IEEE 754
-            (Some(-0.0), false),
-            (Some(f64::NEG_INFINITY), true),
-            (Some(f64::INFINITY), false),
+            (-0.0, false),
+            (f64::NEG_INFINITY, true),
+            (f64::INFINITY, false),
             // NaN comparisons always return false
-            (Some(f64::NAN), false),
+            (f64::NAN, false),
         ];
 
         for i in inputs {

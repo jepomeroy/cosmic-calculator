@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: MIT
 
 mod app;
+mod calculator;
 mod config;
 mod i18n;
+mod keyboard;
+mod messages;
 
 fn main() -> cosmic::iced::Result {
     // Get the system's preferred languages.

@@ -4,7 +4,7 @@ use crate::token::{FunctionType, Token};
 use crate::utils::{bin_to_dec, hex_to_dec};
 
 pub(crate) struct Lexer {
-    input: String,
+    chars: Vec<char>,
     number_format: NumberFormat,
     position: usize,
     read_position: usize,
@@ -12,16 +12,22 @@ pub(crate) struct Lexer {
 }
 
 impl Lexer {
-    pub(crate) fn new(input: String, number_format: NumberFormat) -> Self {
-        let mut lexer = Lexer {
-            input,
+    pub(crate) fn new(number_format: NumberFormat) -> Self {
+        Self {
+            chars: vec![],
             number_format,
             position: 0,
             read_position: 0,
             ch: None,
-        };
-        lexer.read_char();
-        lexer
+        }
+    }
+
+    pub(crate) fn init(&mut self, input: &str) {
+        self.chars = input.chars().collect();
+        self.position = 0;
+        self.read_position = 0;
+        self.ch = None;
+        self.read_char();
     }
 
     fn lookup_token(&mut self, ch: char) -> Result<Token, CalcLibError> {
@@ -36,14 +42,7 @@ impl Lexer {
             '÷' => Ok(Token::Divide),
             '^' => Ok(Token::Caret),
             '!' => Ok(Token::Exclamation),
-            '.' | '0'..='9' => {
-                let num = self.read_number();
-
-                match num {
-                    Ok(value) => Ok(Token::Number(value)),
-                    Err(e) => Err(e),
-                }
-            }
+            '.' | '0'..='9' => Ok(Token::Number(self.read_number()?)),
             'a'..='z' | 'A'..='Z' => {
                 let ident = self.read_ident();
                 match ident.as_str() {
@@ -56,12 +55,19 @@ impl Lexer {
                     "abs" => Ok(Token::Function(FunctionType::Abs)),
                     _ => {
                         if self.is_hexadecimal(&ident) {
-                            return Ok(Token::Number(hex_to_dec(&ident).unwrap()));
+                            hex_to_dec(&ident)
+                                .map(Token::Number)
+                                .map(Ok)
+                                .unwrap_or_else(|| {
+                                    Err(CalcLibError::HexConversionError(format!(
+                                        "Invalid hex identifier: {ident}"
+                                    )))
+                                })
                         } else {
-                            return Err(CalcLibError::SyntaxError(format!(
+                            Err(CalcLibError::SyntaxError(format!(
                                 "Unknown identifier: {}",
                                 ident
-                            )));
+                            )))
                         }
                     }
                 }
@@ -81,67 +87,44 @@ impl Lexer {
         }
     }
 
-    fn is_hexadecimal(&self, hexadecimal_str: &str) -> bool {
-        for ch in hexadecimal_str.chars() {
-            if !ch.is_ascii_hexdigit() {
-                return false;
-            }
-        }
+    fn get_string(&self, start: usize, end: usize) -> String {
+        let slice: &[char] = &self.chars[start..end];
+        slice.iter().collect()
+    }
 
-        true
+    fn is_hexadecimal(&self, hexadecimal_str: &str) -> bool {
+        hexadecimal_str.chars().all(|c| c.is_ascii_hexdigit())
+    }
+
+    fn peek_matches(&self, f: impl Fn(char) -> bool) -> bool {
+        self.chars.get(self.read_position).copied().is_some_and(f)
     }
 
     fn peek_is_char(&self) -> bool {
-        if self.read_position < self.input.len() {
-            return self.input.as_bytes()[self.read_position].is_ascii_alphanumeric();
-        }
-
-        false
+        self.peek_matches(|c| c.is_ascii_alphanumeric())
     }
 
     fn peek_is_decimal(&self) -> bool {
-        if self.read_position < self.input.len() {
-            return self.input.as_bytes()[self.read_position].is_ascii_digit();
-        }
-
-        false
+        self.peek_matches(|c| c.is_ascii_digit())
     }
 
     fn peek_is_dot(&self) -> bool {
-        if self.read_position < self.input.len() {
-            return self.input.as_bytes()[self.read_position] == b'.';
-        }
-
-        false
+        self.peek_matches(|c| c == '.')
     }
 
     fn peek_is_binary(&self) -> bool {
-        if self.read_position < self.input.len() {
-            match self.input.as_bytes()[self.read_position] {
-                b'0' | b'1' => return true,
-                _ => return false,
-            }
-        }
-
-        false
+        self.peek_matches(|c| c == '0' || c == '1')
     }
 
     fn peek_is_hexadecimal(&self) -> bool {
-        if self.read_position < self.input.len() {
-            match self.input.as_bytes()[self.read_position] {
-                b'0'..=b'9' | b'a'..=b'f' | b'A'..=b'F' => return true,
-                _ => return false,
-            }
-        }
-
-        false
+        self.peek_matches(|c| c.is_ascii_hexdigit())
     }
 
     fn read_char(&mut self) {
-        if self.read_position >= self.input.len() {
+        if self.read_position >= self.chars.len() {
             self.ch = None;
         } else {
-            self.ch = Some(self.input.as_bytes()[self.read_position] as char);
+            self.ch = self.chars.get(self.read_position).copied();
         }
 
         self.position = self.read_position;
@@ -158,8 +141,9 @@ impl Lexer {
             }
         }
 
-        self.input[position..self.position + 1].to_string()
+        self.get_string(position, self.position + 1)
     }
+
     fn read_number(&mut self) -> Result<f64, CalcLibError> {
         match self.number_format {
             NumberFormat::Decimal => self.read_decimal(),
@@ -178,7 +162,7 @@ impl Lexer {
             }
         }
 
-        let s = self.input[position..self.position + 1].to_string();
+        let s = self.get_string(position, self.position + 1);
 
         Ok(s.parse::<f64>()?)
     }
@@ -193,13 +177,14 @@ impl Lexer {
             }
         }
 
-        let s = &self.input[position..self.position + 1];
+        let s = self.get_string(position, self.position + 1);
 
-        match hex_to_dec(s) {
+        match hex_to_dec(&s) {
             Some(value) => Ok(value),
-            None => Err(CalcLibError::HexCoversionError(
-                "Failed to parse hexadecimal number {s}".to_string(),
-            )),
+            None => Err(CalcLibError::HexConversionError(format!(
+                "Failed to parse hexadecimal number {}",
+                s
+            ))),
         }
     }
 
@@ -213,13 +198,14 @@ impl Lexer {
             }
         }
 
-        let s = &self.input[position..self.position + 1].to_string();
+        let s = self.get_string(position, self.position + 1);
 
-        match bin_to_dec(s) {
+        match bin_to_dec(&s) {
             Some(value) => Ok(value),
-            None => Err(CalcLibError::BinCoversionError(
-                "Failed to parse binary number {s}".to_string(),
-            )),
+            None => Err(CalcLibError::BinConversionError(format!(
+                "Failed to parse binary number {}",
+                s
+            ))),
         }
     }
 }
@@ -239,19 +225,19 @@ mod tests {
             ("0", 0),
         ];
 
-        for i in input {
-            let mut l = Lexer::new(i.0.to_string(), NumberFormat::Decimal);
+        for (input, expected) in input {
+            let mut l = Lexer::new(NumberFormat::Decimal);
+            l.init(input);
             let token = l.next_token().unwrap();
-            let expected_value = i.1 as f64;
-            assert_eq!(token, Token::Number(expected_value));
+            assert_eq!(token, Token::Number(expected as f64));
         }
     }
 
     #[test]
     fn test_lexer_hex_literal() {
         let input = vec![
-            // ("f", 15),
-            // ("F", 15),
+            ("f", 15),
+            ("F", 15),
             ("ff", 255),
             ("f8f8f8", 16316664),
             ("2A", 42),
@@ -260,11 +246,11 @@ mod tests {
             ("0", 0),
         ];
 
-        for i in input {
-            let mut l = Lexer::new(i.0.to_string(), NumberFormat::Hexadecimal);
+        for (input, expected) in input {
+            let mut l = Lexer::new(NumberFormat::Hexadecimal);
+            l.init(input);
             let token = l.next_token().unwrap();
-            let expected_value = i.1 as f64;
-            assert_eq!(token, Token::Number(expected_value));
+            assert_eq!(token, Token::Number(expected as f64));
         }
     }
 
@@ -278,18 +264,19 @@ mod tests {
             ("0", 0),
         ];
 
-        for i in input {
-            let mut l = Lexer::new(i.0.to_string(), NumberFormat::Binary);
+        for (input, expected) in input {
+            let mut l = Lexer::new(NumberFormat::Binary);
+            l.init(input);
             let token = l.next_token().unwrap();
-            let expected_value = i.1 as f64;
-            assert_eq!(token, Token::Number(expected_value));
+            assert_eq!(token, Token::Number(expected as f64));
         }
     }
 
     #[test]
     fn test_lexer_operators() {
         let input = "+-*/()^!";
-        let mut l = Lexer::new(input.to_string(), NumberFormat::Decimal);
+        let mut l = Lexer::new(NumberFormat::Decimal);
+        l.init(input);
 
         let expected_tokens = vec![
             Token::Plus,
@@ -320,7 +307,8 @@ mod tests {
         ];
 
         for (input, expected) in inputs {
-            let mut l = Lexer::new(input.to_string(), NumberFormat::Decimal);
+            let mut l = Lexer::new(NumberFormat::Decimal);
+            l.init(input);
             let token = l.next_token();
             assert_eq!(token, Ok(expected));
         }
@@ -329,7 +317,8 @@ mod tests {
     #[test]
     fn test_lexer_invalid_char() {
         let input = "@";
-        let mut l = Lexer::new(input.to_string(), NumberFormat::Decimal);
+        let mut l = Lexer::new(NumberFormat::Decimal);
+        l.init(input);
         let result = l.next_token();
         assert!(result.is_err());
     }

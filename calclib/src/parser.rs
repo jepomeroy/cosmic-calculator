@@ -1,5 +1,6 @@
 use crate::{
     ast::Expression,
+    error::CalcLibError,
     lexer::Lexer,
     numformat::NumberFormat,
     token::{FunctionType, LOWEST, PREFIX, Token},
@@ -7,44 +8,58 @@ use crate::{
 
 pub struct Parser {
     lexer: Lexer,
-    number_format: NumberFormat,
     curr_token: Option<Token>,
     peek_token: Option<Token>,
     found_eof: bool,
+    lexer_error: Option<CalcLibError>,
 }
 
-impl Default for Parser {
-    fn default() -> Self {
-        Self::new(NumberFormat::Decimal)
-    }
-}
 impl Parser {
-    pub(crate) fn new(number_format: NumberFormat) -> Self {
+    pub(crate) fn new() -> Self {
         Self {
-            lexer: Lexer::new("".to_string(), number_format.clone()),
-            number_format,
+            lexer: Lexer::new(NumberFormat::Decimal),
             curr_token: None,
             peek_token: None,
             found_eof: false,
+            lexer_error: None,
         }
     }
 
     fn next_token(&mut self) {
         self.curr_token = self.peek_token;
-        self.peek_token = self.lexer.next_token().ok();
+        match self.lexer.next_token() {
+            Ok(token) => self.peek_token = Some(token),
+            Err(e) => {
+                self.peek_token = None;
+                self.lexer_error = Some(e);
+            }
+        }
     }
 
-    pub(crate) fn parse(&mut self, input: String) -> Result<Option<Expression>, String> {
-        self.lexer = Lexer::new(input, self.number_format.clone());
+    pub(crate) fn parse(
+        &mut self,
+        input: &str,
+        number_format: NumberFormat,
+    ) -> Result<Option<Expression>, CalcLibError> {
+        self.lexer = Lexer::new(number_format);
+        self.lexer.init(input);
         self.found_eof = false;
         self.next_token();
         self.next_token();
 
         if self.curr_token.is_none() {
+            if let Some(e) = self.lexer_error.take() {
+                return Err(e);
+            }
+
             return Ok(None);
         }
 
         let expression = self.parse_expression(LOWEST);
+
+        if let Some(e) = self.lexer_error.take() {
+            return Err(e);
+        }
 
         if !self.found_eof {
             return Ok(None);
@@ -86,9 +101,9 @@ impl Parser {
         }
 
         let op = self.curr_token?;
-        let precedense = op.precedence();
+        let precedence = op.precedence();
         self.next_token();
-        let right = self.parse_expression(precedense);
+        let right = self.parse_expression(precedence);
 
         Some(Expression::Infix {
             left: Box::new(left?),
@@ -117,7 +132,7 @@ impl Parser {
         })
     }
 
-    fn parse_expression(&mut self, precedense: u8) -> Option<Expression> {
+    fn parse_expression(&mut self, precedence: u8) -> Option<Expression> {
         let mut left = match &self.curr_token {
             Some(Token::Eof) => return None,
             Some(Token::Minus) => self.parse_prefix(),
@@ -137,7 +152,7 @@ impl Parser {
             _ => return None,
         };
 
-        while precedense < self.peek_precedence() {
+        while precedence < self.peek_precedence() {
             self.next_token();
 
             match &self.curr_token {
@@ -177,9 +192,9 @@ mod tests {
     #[test]
     fn test_parser_empty() {
         let input = vec![""];
-        let mut p = Parser::new(NumberFormat::Decimal);
+        let mut p = Parser::new();
         for expr in input {
-            let result = p.parse(expr.to_string());
+            let result = p.parse(expr, NumberFormat::Decimal);
             assert_eq!(result, Ok(None));
         }
     }
@@ -192,28 +207,26 @@ mod tests {
             ("0", 0.0),
             ("1234567890", 1234567890.0),
         ];
-        let mut p = Parser::default();
-        for expr in input {
-            let result = p.parse(expr.0.to_string());
+        let mut p = Parser::new();
+        for (input, expected) in input {
+            let result = p.parse(input, NumberFormat::Decimal);
 
-            assert_eq!(result, Ok(Some(Expression::Number { value: expr.1 })));
+            assert_eq!(result, Ok(Some(Expression::Number { value: expected })));
         }
     }
 
     #[test]
     fn test_simple_negative_literals() {
         let input = vec![("-5", 5.0), ("-42", 42.0), ("-1234567890", 1234567890.0)];
-        let mut p = Parser::default();
-        for expr in input {
-            let result = p.parse(expr.0.to_string());
-
-            // println!("Result for '{}': {:?}", expr.0, result);
+        let mut p = Parser::new();
+        for (input, expected) in input {
+            let result = p.parse(input, NumberFormat::Decimal);
 
             assert_eq!(
                 result,
                 Ok(Some(Expression::Prefix {
                     operator: Token::Minus,
-                    right: Box::new(Expression::Number { value: expr.1 })
+                    right: Box::new(Expression::Number { value: expected })
                 }))
             );
         }
@@ -222,16 +235,16 @@ mod tests {
     #[test]
     fn test_parser_incomplete() {
         let input = vec!["-", "(399", "*", "3-", "-5+"];
-        let mut p = Parser::default();
+        let mut p = Parser::new();
         for expr in input {
-            let result = p.parse(expr.to_string());
+            let result = p.parse(expr, NumberFormat::Decimal);
             assert_eq!(result, Ok(None));
         }
     }
 
     #[test]
     fn test_parser_complete_simple_expression() {
-        let input: Vec<(&str, Result<Option<Expression>, String>)> = vec![
+        let input: Vec<(&str, Result<Option<Expression>, CalcLibError>)> = vec![
             (
                 "15+3",
                 Ok(Some(Expression::Infix {
@@ -267,16 +280,16 @@ mod tests {
             ),
         ];
 
-        let mut p = Parser::default();
-        for (expr, expected_tokens) in input {
-            let result = p.parse(expr.to_string());
-            assert_eq!(result, expected_tokens);
+        let mut p = Parser::new();
+        for (input, expected) in input {
+            let result = p.parse(input, NumberFormat::Decimal);
+            assert_eq!(result, expected);
         }
     }
 
     #[test]
     fn test_parser_complete_complex_expressions() {
-        let input: Vec<(&str, Result<Option<Expression>, String>)> = vec![
+        let input: Vec<(&str, Result<Option<Expression>, CalcLibError>)> = vec![
             (
                 "5*(3-1)",
                 Ok(Some(Expression::Infix {
@@ -344,16 +357,16 @@ mod tests {
             ),
         ];
 
-        let mut p = Parser::default();
-        for (expr, expected_tokens) in input {
-            let result = p.parse(expr.to_string());
-            assert_eq!(result, expected_tokens);
+        let mut p = Parser::new();
+        for (input, expected) in input {
+            let result = p.parse(input, NumberFormat::Decimal);
+            assert_eq!(result, expected);
         }
     }
 
     #[test]
     fn test_functions() {
-        let input: Vec<(&str, Result<Option<Expression>, String>)> = vec![
+        let input: Vec<(&str, Result<Option<Expression>, CalcLibError>)> = vec![
             (
                 "log(100)",
                 Ok(Some(Expression::Function {
@@ -377,10 +390,10 @@ mod tests {
             ),
         ];
 
-        let mut p = Parser::default();
-        for (expr, expected_tokens) in input {
-            let result = p.parse(expr.to_string());
-            assert_eq!(result, expected_tokens);
+        let mut p = Parser::new();
+        for (input, expected) in input {
+            let result = p.parse(input, NumberFormat::Decimal);
+            assert_eq!(result, expected);
         }
     }
 }

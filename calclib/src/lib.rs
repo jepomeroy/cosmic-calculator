@@ -1,5 +1,5 @@
 mod ast;
-mod error;
+pub mod error;
 pub mod evaluator;
 mod lexer;
 pub mod numformat;

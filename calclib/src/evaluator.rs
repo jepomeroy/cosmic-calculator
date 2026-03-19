@@ -1,192 +1,102 @@
 use crate::ast::Expression::{self, Function, Infix, Number, Prefix, Unary};
+use crate::error::CalcLibError;
 use crate::numformat::NumberFormat;
 use crate::parser::Parser;
 use crate::token::{FunctionType, Token};
 use crate::utils::{change_sign, is_integer, is_negative};
 use statrs::function::{factorial, gamma::gamma};
 
-#[derive(Debug, PartialEq)]
-pub struct EvaluationResult {
-    value: Option<f64>,
-}
-
-impl EvaluationResult {
-    pub fn f64_value(&self) -> Option<f64> {
-        self.value
-    }
-
-    pub fn int_value(&self) -> Option<i64> {
-        if is_integer(self.value) && self.value.map_or(false, |f| f.abs() <= i64::MAX as f64) {
-            return self.value.map(|f| f.trunc() as i64);
-        }
-        None
-    }
-
-    pub fn value(&self) -> String {
-        if let Some(f) = self.value {
-            if is_integer(self.value) {
-                if f.abs() <= i64::MAX as f64 {
-                    return format!("{}", f.trunc() as i64);
-                } else {
-                    return format!("{:e}", f);
-                }
-            } else {
-                return format!("{}", f);
-            }
-        } else {
-            "NaN".to_string()
-        }
-    }
-}
-
-pub fn evaluate(input: String, number_format: NumberFormat) -> Result<EvaluationResult, String> {
-    let mut parser = Parser::new(number_format);
-    let parse_val = parser.parse(input);
+pub fn evaluate(input: &str, number_format: NumberFormat) -> Result<f64, CalcLibError> {
+    let mut parser = Parser::new();
+    let parse_val = parser.parse(input, number_format);
 
     match parse_val {
+        Ok(v) => match v {
+            Some(ex) => evaluate_expression(ex),
+            None => Err(CalcLibError::InvalidExpression(input.to_string())),
+        },
         Err(e) => Err(e),
-        Ok(v) => {
-            println!("Parser output: {:?}", v);
-            match v {
-                Some(ex) => evaluate_expression(ex),
-                None => Err("Invalid expression".to_string()),
-            }
-        }
     }
 }
 
-fn evaluate_expression(expression: Expression) -> Result<EvaluationResult, String> {
+fn evaluate_expression(expression: Expression) -> Result<f64, CalcLibError> {
     match expression {
-        Number { value } => Ok(EvaluationResult { value: Some(value) }),
+        Number { value } => Ok(value),
         Infix {
             left,
             operator,
             right,
         } => {
-            let left_val = evaluate_expression(*left)?;
-            let right_val = evaluate_expression(*right)?;
-
-            let left_num = left_val.value.unwrap();
-            let right_num = right_val.value.unwrap();
+            let left_num = evaluate_expression(*left)?;
+            let right_num = evaluate_expression(*right)?;
 
             match operator {
-                Token::Plus => Ok(EvaluationResult {
-                    value: Some(left_num + right_num),
-                }),
-                Token::Minus => Ok(EvaluationResult {
-                    value: Some(left_num - right_num),
-                }),
-                Token::Multiply => Ok(EvaluationResult {
-                    value: Some(left_num * right_num),
-                }),
+                Token::Plus => Ok(left_num + right_num),
+                Token::Minus => Ok(left_num - right_num),
+                Token::Multiply => Ok(left_num * right_num),
                 Token::Divide => {
                     if right_num == 0.0 {
-                        Err("Division by zero".to_string())
+                        Err(CalcLibError::DivisionByZero())
                     } else {
-                        Ok(EvaluationResult {
-                            value: Some(left_num / right_num),
-                        })
+                        Ok(left_num / right_num)
                     }
                 }
-                Token::Caret => Ok(EvaluationResult {
-                    value: Some(left_num.powf(right_num)),
-                }),
-                _ => Err("Unsupported operator".to_string()),
+                Token::Caret => Ok(left_num.powf(right_num)),
+                _ => Err(CalcLibError::UnsupportedOperator()),
             }
         }
         Prefix { operator, right } => {
-            let right_val = evaluate_expression(*right)?;
-
-            let right_num = right_val.value.unwrap();
+            let right_num = evaluate_expression(*right)?;
 
             match operator {
-                Token::Minus => Ok(EvaluationResult {
-                    value: Some(-right_num),
-                }),
-                _ => Err("Unsupported operator".to_string()),
+                Token::Minus => Ok(-right_num),
+                _ => Err(CalcLibError::UnsupportedOperator()),
             }
         }
         Unary {
             operator,
             expression,
         } => {
-            let expr_val = evaluate_expression(*expression)?;
-
-            let expr_num = expr_val.value;
+            let expr_num = evaluate_expression(*expression)?;
 
             match operator {
-                Token::Exclamation => match calc_factorial(expr_num) {
-                    Ok(result) => Ok(EvaluationResult {
-                        value: Some(result),
-                    }),
-                    Err(_) => Err("Failed to compute factorial".to_string()),
-                },
-                _ => Err("Unsupported operator".to_string()),
+                Token::Exclamation => Ok(calc_factorial(expr_num)),
+                _ => Err(CalcLibError::UnsupportedOperator()),
             }
         }
 
         Function { function, argument } => {
-            let expr_val = evaluate_expression(*argument)?;
-
-            let expr_num = expr_val.value;
+            let expr_num = evaluate_expression(*argument)?;
 
             match function {
-                FunctionType::Log => expr_num
-                    .map(|n| EvaluationResult {
-                        value: Some(n.log10()),
-                    })
-                    .ok_or_else(|| "Failed to compute log".to_string()),
+                FunctionType::Log => Ok(expr_num.log10()),
 
-                FunctionType::Ln => expr_num
-                    .map(|n| EvaluationResult {
-                        value: Some(n.ln()),
-                    })
-                    .ok_or_else(|| "Failed to compute ln".to_string()),
-                FunctionType::LogTwo => expr_num
-                    .map(|n| EvaluationResult {
-                        value: Some(n.log2()),
-                    })
-                    .ok_or_else(|| "Failed to compute logtwo".to_string()),
-                FunctionType::SqRt => expr_num
-                    .map(|n| EvaluationResult {
-                        value: Some(n.sqrt()),
-                    })
-                    .ok_or_else(|| "Failed to compute sqrt".to_string()),
-                FunctionType::CbRt => expr_num
-                    .map(|n| EvaluationResult {
-                        value: Some(n.cbrt()),
-                    })
-                    .ok_or_else(|| "Failed to compute cbrt".to_string()),
-                FunctionType::Abs => expr_num
-                    .map(|n| EvaluationResult {
-                        value: Some(n.abs()),
-                    })
-                    .ok_or_else(|| "Failed to compute abs".to_string()),
+                FunctionType::Ln => Ok(expr_num.ln()),
+                FunctionType::LogTwo => Ok(expr_num.log2()),
+                FunctionType::SqRt => Ok(expr_num.sqrt()),
+                FunctionType::CbRt => Ok(expr_num.cbrt()),
+                FunctionType::Abs => Ok(expr_num.abs()),
             }
         }
     }
 }
 
 /// Computes the factorial of a non-negative integer n.
-fn calc_factorial(n: Option<f64>) -> Result<f64, ()> {
-    if n.is_none() {
-        return Err(());
-    }
-
+fn calc_factorial(n: f64) -> f64 {
     // if it is negative, I want to flip the sign, compute the factorial, and then flip the sign
     // back at the end. This is because the factorial of a negative number is not defined, but we
     // can use the gamma function to compute it for negative numbers as well.
     let neg = is_negative(n);
-    let num = n.unwrap().abs();
+    let num = n.abs();
 
     if is_integer(n) {
         let integer: u64 = num as u64;
 
         let result = factorial::factorial(integer);
 
-        Ok(change_sign(result, neg))
+        change_sign(result, neg)
     } else {
-        Ok(change_sign(gamma(num + 1.0), neg))
+        change_sign(gamma(num + 1.0), neg)
     }
 }
 
@@ -194,191 +104,184 @@ fn calc_factorial(n: Option<f64>) -> Result<f64, ()> {
 mod tests {
     use super::*;
 
+    fn int_value(num: f64) -> Option<i64> {
+        (is_integer(num) && num >= i64::MIN as f64 && num <= i64::MAX as f64)
+            .then(|| num.trunc() as i64)
+    }
+
     #[test]
     fn test_evaluate_int_expression() {
-        let result = evaluate("42".to_string(), NumberFormat::Decimal);
+        let result = evaluate("42", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(is_integer(eval_result.value));
-        assert_eq!(eval_result.int_value(), Some(42));
+        assert!(is_integer(eval_result));
+        assert_eq!(int_value(eval_result), Some(42));
     }
 
     #[test]
     fn test_evaluate_simple_expression() {
-        let input = vec![
-            ("2+3".to_string(), 5),
-            ("10-4".to_string(), 6),
-            ("6*7".to_string(), 42),
-            ("20/5".to_string(), 4),
-        ];
+        let input = vec![("2+3", 5), ("10-4", 6), ("6*7", 42), ("20/5", 4)];
 
         for i in input {
             let result = evaluate(i.0, NumberFormat::Decimal);
             assert!(result.is_ok());
             let eval_result = result.unwrap();
-            assert!(is_integer(eval_result.value));
-            assert_eq!(eval_result.int_value(), Some(i.1));
+            assert!(is_integer(eval_result));
+            assert_eq!(int_value(eval_result), Some(i.1));
         }
     }
 
     #[test]
     fn test_evaluate_expression_with_prefix() {
-        let input = vec![
-            ("-5".to_string(), -5),
-            ("-(-3)".to_string(), 3),
-            ("-(2+3)".to_string(), -5),
-            ("-4+7".to_string(), 3),
-        ];
+        let input = vec![("-5", -5), ("-(-3)", 3), ("-(2+3)", -5), ("-4+7", 3)];
 
         for i in input {
             let result = evaluate(i.0, NumberFormat::Decimal);
             assert!(result.is_ok());
             let eval_result = result.unwrap();
-            assert!(is_integer(eval_result.value));
-            assert_eq!(eval_result.int_value(), Some(i.1));
+            assert!(is_integer(eval_result));
+            assert_eq!(int_value(eval_result), Some(i.1));
         }
     }
 
     #[test]
     fn test_evaluate_division_by_zero() {
-        let result = evaluate("10/0".to_string(), NumberFormat::Decimal);
+        let result = evaluate("10/0", NumberFormat::Decimal);
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), "Division by zero".to_string());
+        assert_eq!(result.err().unwrap(), CalcLibError::DivisionByZero());
     }
 
     #[test]
     fn test_evaluate_nested_expression() {
-        let result = evaluate("2*(3+4)".to_string(), NumberFormat::Decimal);
+        let result = evaluate("2*(3+4)", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(is_integer(eval_result.value));
-        assert_eq!(eval_result.int_value(), Some(14));
+        assert!(is_integer(eval_result));
+        assert_eq!(int_value(eval_result), Some(14));
     }
 
     #[test]
-    fn test_evaluate_factoriacl_expressions() {
-        let result = evaluate("5!".to_string(), NumberFormat::Decimal);
+    fn test_evaluate_factorial_expressions() {
+        let result = evaluate("5!", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(is_integer(eval_result.value));
-        assert_eq!(eval_result.int_value(), Some(120));
+        assert!(is_integer(eval_result));
+        assert_eq!(int_value(eval_result), Some(120));
     }
 
     #[test]
-    fn test_evaluate_factoriacl_with_negative_expressions() {
-        let result = evaluate("-5!".to_string(), NumberFormat::Decimal);
+    fn test_evaluate_factorial_with_negative_expressions() {
+        let result = evaluate("-5!", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(is_integer(eval_result.value));
-        assert_eq!(eval_result.int_value(), Some(-120));
+        assert!(is_integer(eval_result));
+        assert_eq!(int_value(eval_result), Some(-120));
     }
 
     #[test]
-    fn test_evaluate_factoriacl_float_expressions() {
-        let result = evaluate("2.3!".to_string(), NumberFormat::Decimal);
+    fn test_evaluate_factorial_float_expressions() {
+        let result = evaluate("2.3!", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(!is_integer(eval_result.value));
-        assert_eq!(eval_result.value, Some(2.6834373819557666));
+        assert!(!is_integer(eval_result));
+        assert_eq!(eval_result, 2.6834373819557666);
     }
 
     #[test]
-    fn test_evaluate_factoriacl_negative_float_expressions() {
-        let result = evaluate("-2.3!".to_string(), NumberFormat::Decimal);
+    fn test_evaluate_factorial_negative_float_expressions() {
+        let result = evaluate("-2.3!", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(!is_integer(eval_result.value));
-        assert_eq!(eval_result.value, Some(-2.6834373819557666));
+        assert!(!is_integer(eval_result));
+        assert_eq!(eval_result, -2.6834373819557666);
     }
 
     #[test]
-    fn test_evaluate_factoriacl_limit_expressions() {
-        let result = evaluate("170!".to_string(), NumberFormat::Decimal);
+    fn test_evaluate_factorial_limit_expressions() {
+        let result = evaluate("170!", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(is_integer(eval_result.value));
-        assert_eq!(eval_result.int_value(), None);
-        assert_eq!(eval_result.value(), "7.257415615307994e306");
+        assert!(is_integer(eval_result));
+        assert_eq!(int_value(eval_result), None);
+        assert_eq!(eval_result, 7.257415615307994e306);
     }
 
     #[test]
-    fn test_evaluate_factoriacl_overflow_expressions() {
-        let result = evaluate("171!".to_string(), NumberFormat::Decimal);
+    fn test_evaluate_factorial_overflow_expressions() {
+        let result = evaluate("171!", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(!is_integer(eval_result.value));
-        assert_eq!(eval_result.value, Some(f64::INFINITY));
+        assert!(!is_integer(eval_result));
+        assert_eq!(eval_result, f64::INFINITY);
     }
 
     #[test]
-    fn test_evaluate_factoriacl_negative_limit_expressions() {
-        let result = evaluate("-170!".to_string(), NumberFormat::Decimal);
+    fn test_evaluate_factorial_negative_limit_expressions() {
+        let result = evaluate("-170!", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(is_integer(eval_result.value));
-        assert_eq!(eval_result.int_value(), None);
-        assert_eq!(eval_result.value(), "-7.257415615307994e306");
+        assert!(is_integer(eval_result));
+        assert_eq!(int_value(eval_result), None);
+        assert_eq!(eval_result, -7.257415615307994e306);
     }
 
     #[test]
-    fn test_evaluate_factoriacl_negative_overflow_expressions() {
-        let result = evaluate("-171!".to_string(), NumberFormat::Decimal);
+    fn test_evaluate_factorial_negative_overflow_expressions() {
+        let result = evaluate("-171!", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert!(!is_integer(eval_result.value));
-        assert_eq!(eval_result.value, Some(f64::NEG_INFINITY));
+        assert!(!is_integer(eval_result));
+        assert_eq!(eval_result, f64::NEG_INFINITY);
     }
 
     #[test]
     fn test_evaluate_factorial_function_of_zero() {
-        let result = calc_factorial(Some(0.0));
-        assert!(result.is_ok());
-        let eval_result = result.unwrap();
-        assert_eq!(eval_result, 1.0);
+        let result = calc_factorial(0.0);
+        assert_eq!(result, 1.0);
     }
 
     #[test]
     fn test_evaluate_type_mismatch() {
-        let result = evaluate("2+3.5".to_string(), NumberFormat::Decimal);
+        let result = evaluate("2+3.5", NumberFormat::Decimal);
         assert!(result.is_ok());
         let eval_result = result.unwrap();
-        assert_eq!(eval_result.value, Some(5.5));
+        assert_eq!(eval_result, 5.5);
     }
 
     #[test]
     fn test_evaluate_powers() {
         let inputs = vec![
-            ("3^2", Some(9.0)),
-            ("2^3", Some(8.0)),
-            ("2^8", Some(256.0)),
-            ("2.391^2", Some(5.716881)),
+            ("3^2", 9.0),
+            ("2^3", 8.0),
+            ("2^8", 256.0),
+            ("2.391^2", 5.716881),
         ];
 
         for (input, expected) in inputs {
-            let result = evaluate(input.to_string(), NumberFormat::Decimal);
+            let result = evaluate(input, NumberFormat::Decimal);
             assert!(result.is_ok());
             let eval_result = result.unwrap();
-            assert_eq!(eval_result.value, expected);
+            assert_eq!(eval_result, expected);
         }
     }
 
     #[test]
     fn test_math_functions() {
         let inputs = vec![
-            ("log(100)", Some(2.0)),
-            ("ln(12)", Some(2.4849066497880004)),
-            ("logtwo(8)", Some(3.0)),
-            ("cbrt(27)", Some(3.0)),
-            ("cbrt(8)", Some(2.0)),
-            ("abs(-5)", Some(5.0)),
-            ("abs(3)", Some(3.0)),
+            ("log(100)", 2.0),
+            ("ln(12)", 2.4849066497880004),
+            ("logtwo(8)", 3.0),
+            ("cbrt(27)", 3.0),
+            ("cbrt(8)", 2.0),
+            ("abs(-5)", 5.0),
+            ("abs(3)", 3.0),
         ];
 
         for (input, expected) in inputs {
-            let result = evaluate(input.to_string(), NumberFormat::Decimal);
+            let result = evaluate(input, NumberFormat::Decimal);
             assert!(result.is_ok());
             let eval_result = result.unwrap();
-            assert_eq!(eval_result.value, expected);
+            assert_eq!(eval_result, expected);
         }
     }
 }
