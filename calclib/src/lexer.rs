@@ -60,23 +60,29 @@ impl Lexer {
                                 .map(Ok)
                                 .unwrap_or_else(|| {
                                     Err(CalcLibError::HexConversionError(format!(
-                                        "Invalid hex identifier: {ident}"
+                                        "Invalid hex identifier: '{}'",
+                                        ident.as_str()
                                     )))
                                 })
                         } else {
+                            println!("{}", ident.as_str());
                             Err(CalcLibError::SyntaxError(format!(
-                                "Unknown identifier: {}",
-                                ident
+                                "Unknown identifier: '{}'",
+                                ident.as_str()
                             )))
                         }
                     }
                 }
             }
-            _ => Err(CalcLibError::SyntaxError(format!("Unknown type: {}", ch))),
+            _ => Err(CalcLibError::SyntaxError(format!("Unknown type: '{}'", ch))),
         }
     }
 
     pub(crate) fn next_token(&mut self) -> Result<Token, CalcLibError> {
+        while matches!(self.ch, Some(' ') | Some('\t')) {
+            self.read_char();
+        }
+
         if let Some(ch) = self.ch {
             let token = self.lookup_token(ch);
             self.read_char();

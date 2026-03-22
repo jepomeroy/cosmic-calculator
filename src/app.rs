@@ -176,26 +176,27 @@ impl cosmic::Application for AppModel {
     }
 
     fn subscription(&self) -> cosmic::iced::Subscription<Message> {
-        cosmic::iced::event::listen_with(|event, _status, _window_id| {
+        cosmic::iced::event::listen_with(|event, _status, _window_id| -> Option<Message> {
             if let cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
                 key,
                 modifiers,
+                text,
                 ..
             }) = event
             {
-                if modifiers.control() {
-                    match key.as_ref() {
+                if modifiers.control() || modifiers.alt() {
+                    return match key.as_ref() {
                         keyboard::Key::Character("d") => {
-                            return Some(Message::NumberFormatSelected(NumberFormat::Decimal));
+                            Some(Message::NumberFormatSelected(NumberFormat::Decimal))
                         }
                         keyboard::Key::Character("h") => {
-                            return Some(Message::NumberFormatSelected(NumberFormat::Hexadecimal));
+                            Some(Message::NumberFormatSelected(NumberFormat::Hexadecimal))
                         }
                         keyboard::Key::Character("b") => {
-                            return Some(Message::NumberFormatSelected(NumberFormat::Binary));
+                            Some(Message::NumberFormatSelected(NumberFormat::Binary))
                         }
-                        _ => {}
-                    }
+                        _ => None,
+                    };
                 }
                 match key {
                     keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
@@ -206,7 +207,16 @@ impl cosmic::Application for AppModel {
                     }
                     keyboard::Key::Named(keyboard::key::Named::Home) => Some(Message::Home),
                     keyboard::Key::Named(keyboard::key::Named::End) => Some(Message::End),
-                    _ => None,
+                    keyboard::Key::Named(keyboard::key::Named::Backspace) => {
+                        Some(Message::KeyPressed(KeyPress::Backspace))
+                    }
+                    keyboard::Key::Named(keyboard::key::Named::Enter) => {
+                        Some(Message::KeyPressed(KeyPress::Equals))
+                    }
+                    _ => text.and_then(|t| match t.as_str() {
+                        "=" => Some(Message::KeyPressed(KeyPress::Equals)),
+                        s => Some(Message::KeyPressed(KeyPress::Insert(s.to_string()))),
+                    }),
                 }
             } else {
                 None
@@ -266,7 +276,7 @@ impl cosmic::Application for AppModel {
             .push(
                 text_input("", &self.input)
                     .id(Id::new(INPUT_ID))
-                    .on_input(Message::InputChanged)
+                    .on_paste(|s| Message::Paste(s))
                     .on_submit(|_| Message::KeyPressed(KeyPress::Equals))
                     .always_active()
                     .size(24)
@@ -362,26 +372,38 @@ impl cosmic::Application for AppModel {
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::InputChanged(value) => {
-                self.cursor_pos = None;
-                if value.contains('=') || value.contains('\n') {
-                    return self.evaluate();
-                }
+            // Message::InputChanged(value) => {
+            //     self.cursor_pos = None;
+            //     if value.contains('=') || value.contains('\n') {
+            //         return self.evaluate();
+            //     }
 
-                let substituted = substitute(&value);
-                let number_format = self.number_format;
-                let filtered: String = substituted
+            //     println!("Presses key: {value}");
+
+            //     let substituted = substitute(&value);
+            //     let number_format = self.number_format;
+            //     let filtered: String = substituted
+            //         .chars()
+            //         .filter(|c| validate(c, number_format))
+            //         .collect();
+            //     // Reject a closing paren that would leave more closing than opening,
+            //     // matching the same rule applied by the ")" button.
+            //     if get_paren_count(&filtered) < 0 {
+            //         // Revert: leave self.input unchanged; the widget will re-sync on
+            //         // the next frame.
+            //     } else {
+            //         self.input = filtered;
+            //     }
+            // }
+            Message::Paste(value) => {
+                let filtered: String = value
                     .chars()
-                    .filter(|c| validate(c, number_format))
+                    .filter(|c| validate(c, self.number_format))
                     .collect();
-                // Reject a closing paren that would leave more closing than opening,
-                // matching the same rule applied by the ")" button.
-                if get_paren_count(&filtered) < 0 {
-                    // Revert: leave self.input unchanged; the widget will re-sync on
-                    // the next frame.
-                } else {
-                    self.input = filtered;
-                }
+
+                let new_pos = insert_at_cursor(&mut self.input, &filtered, self.cursor_pos);
+                self.cursor_pos = Some(new_pos);
+                return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
             }
             Message::CopyResultToInput(result) => {
                 self.input.push_str(&result);
@@ -483,6 +505,58 @@ impl cosmic::Application for AppModel {
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
+                    KeyPress::And => {
+                        let new_pos = insert_at_cursor(&mut self.input, " AND ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Or => {
+                        let new_pos = insert_at_cursor(&mut self.input, " OR ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Nand => {
+                        let new_pos = insert_at_cursor(&mut self.input, " NAND ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Nor => {
+                        let new_pos = insert_at_cursor(&mut self.input, " NOR ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Xnor => {
+                        let new_pos = insert_at_cursor(&mut self.input, " XNOR ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Xor => {
+                        let new_pos = insert_at_cursor(&mut self.input, " XOR ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Lshift => {
+                        let new_pos = insert_at_cursor(&mut self.input, " << ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Rshift => {
+                        let new_pos = insert_at_cursor(&mut self.input, " >> ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Not => {
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "NOT()", self.cursor_pos);
+                        let new_pos = inserted_end - 1;
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Mod => {
+                        let new_pos = insert_at_cursor(&mut self.input, " MOD ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
                     KeyPress::Abs => {
                         let inserted_end =
                             insert_at_cursor(&mut self.input, "abs()", self.cursor_pos);
@@ -491,9 +565,17 @@ impl cosmic::Application for AppModel {
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
                     KeyPress::Insert(text) => {
-                        let substituted = substitute(text);
+                        let substituted = substitute(&text);
+                        let number_format = self.number_format;
+                        let validated: String = substituted
+                            .chars()
+                            .filter(|c| validate(c, number_format))
+                            .collect();
+                        if validated.is_empty() {
+                            return Task::none();
+                        }
                         let new_pos =
-                            insert_at_cursor(&mut self.input, &substituted, self.cursor_pos);
+                            insert_at_cursor(&mut self.input, &validated, self.cursor_pos);
                         self.cursor_pos = Some(new_pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                     }
@@ -501,7 +583,10 @@ impl cosmic::Application for AppModel {
                 return text_input::move_cursor_to_end(Id::new(INPUT_ID));
             }
             Message::ModeSelected(page) => {
-                let target = self.nav.iter().find(|&id| self.nav.data::<Page>(id) == Some(&page));
+                let target = self
+                    .nav
+                    .iter()
+                    .find(|&id| self.nav.data::<Page>(id) == Some(&page));
                 if let Some(id) = target {
                     return self.on_nav_select(id);
                 }
@@ -524,10 +609,12 @@ impl cosmic::Application for AppModel {
             },
             Message::ArrowLeft => {
                 let len = self.input.chars().count();
-                self.cursor_pos = Some(match self.cursor_pos {
+                let pos = match self.cursor_pos {
                     None => len.saturating_sub(1),
                     Some(pos) => pos.saturating_sub(1),
-                });
+                };
+                self.cursor_pos = Some(pos);
+                return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
             }
             Message::ArrowRight => {
                 let len = self.input.chars().count();
@@ -536,12 +623,18 @@ impl cosmic::Application for AppModel {
                     Some(pos) if pos + 1 >= len => None,
                     Some(pos) => Some(pos + 1),
                 };
+                return match self.cursor_pos {
+                    Some(pos) => text_input::move_cursor_to(Id::new(INPUT_ID), pos),
+                    None => text_input::move_cursor_to_end(Id::new(INPUT_ID)),
+                };
             }
             Message::Home => {
                 self.cursor_pos = Some(0);
+                return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
             }
             Message::End => {
                 self.cursor_pos = None;
+                return text_input::move_cursor_to_end(Id::new(INPUT_ID));
             }
             Message::NumberFormatSelected(number_format) => {
                 self.number_format = number_format;

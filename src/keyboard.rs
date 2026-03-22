@@ -15,32 +15,56 @@ fn hexidecimal_keys(number_format: NumberFormat, space_s: u16) -> Element<'stati
     let hexidecimal_keyboard: Element<_> = widget::column::with_capacity(1)
         .push(
             widget::row::with_capacity(1)
-                .push(make_button_enabled("A", KeyPress::Insert("A"), hex_enabled))
+                .push(make_button_enabled(
+                    "A",
+                    KeyPress::Insert("A".to_string()),
+                    hex_enabled,
+                ))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(1)
-                .push(make_button_enabled("B", KeyPress::Insert("B"), hex_enabled))
+                .push(make_button_enabled(
+                    "B",
+                    KeyPress::Insert("B".to_string()),
+                    hex_enabled,
+                ))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(1)
-                .push(make_button_enabled("C", KeyPress::Insert("C"), hex_enabled))
+                .push(make_button_enabled(
+                    "C",
+                    KeyPress::Insert("C".to_string()),
+                    hex_enabled,
+                ))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(1)
-                .push(make_button_enabled("D", KeyPress::Insert("D"), hex_enabled))
+                .push(make_button_enabled(
+                    "D",
+                    KeyPress::Insert("D".to_string()),
+                    hex_enabled,
+                ))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(1)
-                .push(make_button_enabled("E", KeyPress::Insert("E"), hex_enabled))
+                .push(make_button_enabled(
+                    "E",
+                    KeyPress::Insert("E".to_string()),
+                    hex_enabled,
+                ))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(1)
-                .push(make_button_enabled("F", KeyPress::Insert("F"), hex_enabled))
+                .push(make_button_enabled(
+                    "F",
+                    KeyPress::Insert("F".to_string()),
+                    hex_enabled,
+                ))
                 .spacing(space_s),
         )
         .spacing(space_s)
@@ -71,20 +95,20 @@ fn advanced_keys(space_s: u16) -> Element<'static, Message> {
         )
         .push(
             widget::row::with_capacity(2)
-                .push(make_button("x²", KeyPress::Insert("²")))
-                .push(make_button("x³", KeyPress::Insert("³")))
+                .push(make_button("x²", KeyPress::Insert("²".to_string())))
+                .push(make_button("x³", KeyPress::Insert("³".to_string())))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(2)
-                .push(make_button("xʸ", KeyPress::Insert("^")))
+                .push(make_button("xʸ", KeyPress::Insert("^".to_string())))
                 .push(make_button("Abs", KeyPress::Abs))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(2)
-                .push(make_button("π", KeyPress::Insert("π")))
-                .push(make_button("e", KeyPress::Insert("e")))
+                .push(make_button("π", KeyPress::Insert("π".to_string())))
+                .push(make_button("e", KeyPress::Insert("e".to_string())))
                 .spacing(space_s),
         )
         .spacing(space_s)
@@ -97,32 +121,32 @@ fn developer_keys(space_s: u16) -> Element<'static, Message> {
     let developer_keyboard: Element<_> = widget::column::with_capacity(1)
         .push(
             widget::row::with_capacity(2)
-                .push(make_button("AND", KeyPress::Insert("AND")))
-                .push(make_button("OR", KeyPress::Insert("OR")))
+                .push(make_button("AND", KeyPress::And))
+                .push(make_button("OR", KeyPress::Or))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(2)
-                .push(make_button("NAND", KeyPress::Insert("NAND")))
-                .push(make_button("NOR", KeyPress::Insert("NOR")))
+                .push(make_button("NAND", KeyPress::Nand))
+                .push(make_button("NOR", KeyPress::Nor))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(2)
-                .push(make_button("XNOR", KeyPress::Insert("XNOR")))
-                .push(make_button("XOR", KeyPress::Insert("XOR")))
+                .push(make_button("XNOR", KeyPress::Xnor))
+                .push(make_button("XOR", KeyPress::Xor))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(2)
-                .push(make_button("<<", KeyPress::Insert("<<")))
-                .push(make_button(">>", KeyPress::Insert(">>")))
+                .push(make_button("<<", KeyPress::Lshift))
+                .push(make_button(">>", KeyPress::Rshift))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(2)
-                .push(make_button("MOD", KeyPress::Insert("MOD")))
-                .push(make_button("NOT", KeyPress::Insert("NOT")))
+                .push(make_button("MOD", KeyPress::Mod))
+                .push(make_button("NOT", KeyPress::Not))
                 .spacing(space_s),
         )
         .spacing(space_s)
@@ -144,42 +168,74 @@ fn basic_keys(number_format: NumberFormat, space_s: u16) -> Element<'static, Mes
         )
         .push(
             widget::row::with_capacity(4)
-                .push(make_button("(", KeyPress::Insert("(")))
+                .push(make_button("(", KeyPress::Insert("(".to_string())))
                 .push(make_button(")", KeyPress::CloseParen))
                 .push(make_button("±", KeyPress::Negate))
-                .push(make_button("!", KeyPress::Insert("!")))
+                .push(make_button("!", KeyPress::Insert("!".to_string())))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(4)
-                .push(make_button_enabled("7", KeyPress::Insert("7"), dec_enabled))
-                .push(make_button_enabled("8", KeyPress::Insert("8"), dec_enabled))
-                .push(make_button_enabled("9", KeyPress::Insert("9"), dec_enabled))
-                .push(make_button("×", KeyPress::Insert("×")))
+                .push(make_button_enabled(
+                    "7",
+                    KeyPress::Insert("7".to_string()),
+                    dec_enabled,
+                ))
+                .push(make_button_enabled(
+                    "8",
+                    KeyPress::Insert("8".to_string()),
+                    dec_enabled,
+                ))
+                .push(make_button_enabled(
+                    "9",
+                    KeyPress::Insert("9".to_string()),
+                    dec_enabled,
+                ))
+                .push(make_button("×", KeyPress::Insert("×".to_string())))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(4)
-                .push(make_button_enabled("4", KeyPress::Insert("4"), dec_enabled))
-                .push(make_button_enabled("5", KeyPress::Insert("5"), dec_enabled))
-                .push(make_button_enabled("6", KeyPress::Insert("6"), dec_enabled))
-                .push(make_button("÷", KeyPress::Insert("÷")))
+                .push(make_button_enabled(
+                    "4",
+                    KeyPress::Insert("4".to_string()),
+                    dec_enabled,
+                ))
+                .push(make_button_enabled(
+                    "5",
+                    KeyPress::Insert("5".to_string()),
+                    dec_enabled,
+                ))
+                .push(make_button_enabled(
+                    "6",
+                    KeyPress::Insert("6".to_string()),
+                    dec_enabled,
+                ))
+                .push(make_button("÷", KeyPress::Insert("÷".to_string())))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(4)
-                .push(make_button("1", KeyPress::Insert("1")))
-                .push(make_button_enabled("2", KeyPress::Insert("2"), dec_enabled))
-                .push(make_button_enabled("3", KeyPress::Insert("3"), dec_enabled))
-                .push(make_button("+", KeyPress::Insert("+")))
+                .push(make_button("1", KeyPress::Insert("1".to_string())))
+                .push(make_button_enabled(
+                    "2",
+                    KeyPress::Insert("2".to_string()),
+                    dec_enabled,
+                ))
+                .push(make_button_enabled(
+                    "3",
+                    KeyPress::Insert("3".to_string()),
+                    dec_enabled,
+                ))
+                .push(make_button("+", KeyPress::Insert("+".to_string())))
                 .spacing(space_s),
         )
         .push(
             widget::row::with_capacity(4)
-                .push(make_button(".", KeyPress::Insert(".")))
-                .push(make_button("0", KeyPress::Insert("0")))
+                .push(make_button(".", KeyPress::Insert(".".to_string())))
+                .push(make_button("0", KeyPress::Insert("0".to_string())))
                 .push(make_button("=", KeyPress::Equals))
-                .push(make_button("-", KeyPress::Insert("-")))
+                .push(make_button("-", KeyPress::Insert("-".to_string())))
                 .spacing(space_s),
         )
         .spacing(space_s)
@@ -204,7 +260,11 @@ fn make_button(label: &'static str, key: KeyPress) -> Element<'static, Message> 
     .into()
 }
 
-fn make_button_enabled(label: &'static str, key: KeyPress, enabled: bool) -> Element<'static, Message> {
+fn make_button_enabled(
+    label: &'static str,
+    key: KeyPress,
+    enabled: bool,
+) -> Element<'static, Message> {
     let btn = button::custom(
         text(label)
             .size(18)

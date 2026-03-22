@@ -12,6 +12,7 @@ pub enum KeyPress {
     Equals,
     Ans,
     CloseParen,
+    /// Advanced math
     Log,
     Ln,
     Log2,
@@ -19,15 +20,27 @@ pub enum KeyPress {
     Sqrt,
     Cbrt,
     Abs,
+    /// Boolean math
+    And,
+    Or,
+    Nand,
+    Nor,
+    Xor,
+    Xnor,
+    Lshift,
+    Rshift,
+    Mod,
+    Not,
     /// Insert text into the input (passed through `substitute` before insertion).
-    Insert(&'static str),
+    Insert(String),
 }
 
 /// Messages emitted by the application and its widgets.
 #[derive(Debug, Clone)]
 pub enum Message {
-    InputChanged(String),
+    // InputChanged(String),
     KeyPressed(KeyPress),
+    Paste(String),
     ModeSelected(Page),
     CopyResultToInput(String),
     LaunchUrl(String),
