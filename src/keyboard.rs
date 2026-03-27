@@ -139,8 +139,8 @@ fn developer_keys(space_s: u16) -> Element<'static, Message> {
         )
         .push(
             widget::row::with_capacity(2)
-                .push(make_button("<<", KeyPress::Lshift))
-                .push(make_button(">>", KeyPress::Rshift))
+                .push(make_button("«", KeyPress::Lshift))
+                .push(make_button("»", KeyPress::Rshift))
                 .spacing(space_s),
         )
         .push(
@@ -155,7 +155,7 @@ fn developer_keys(space_s: u16) -> Element<'static, Message> {
     developer_keyboard
 }
 
-fn basic_keys(number_format: NumberFormat, space_s: u16) -> Element<'static, Message> {
+fn basic_keys(number_format: NumberFormat, space_s: u16, decimal_enabled: bool) -> Element<'static, Message> {
     let dec_enabled = number_format != NumberFormat::Binary;
     let basic_keyboard: Element<_> = widget::column::with_capacity(1)
         .push(
@@ -232,7 +232,7 @@ fn basic_keys(number_format: NumberFormat, space_s: u16) -> Element<'static, Mes
         )
         .push(
             widget::row::with_capacity(4)
-                .push(make_button(".", KeyPress::Insert(".".to_string())))
+                .push(make_button_enabled(".", KeyPress::Insert(".".to_string()), decimal_enabled))
                 .push(make_button("0", KeyPress::Insert("0".to_string())))
                 .push(make_button("=", KeyPress::Equals))
                 .push(make_button("-", KeyPress::Insert("-".to_string())))
@@ -290,7 +290,7 @@ pub(crate) fn advanced_keyboard(
 ) -> Element<'static, Message> {
     widget::container(
         widget::row::with_capacity(2)
-            .push(basic_keys(number_format, space_s))
+            .push(basic_keys(number_format, space_s, true))
             .push(advanced_keys(space_s))
             .spacing(space_s),
     )
@@ -303,7 +303,7 @@ pub(crate) fn basic_keyboard(
     number_format: NumberFormat,
     space_s: u16,
 ) -> Element<'static, Message> {
-    widget::container(basic_keys(number_format, space_s))
+    widget::container(basic_keys(number_format, space_s, true))
         .width(Length::Fill)
         .align_x(Horizontal::Center)
         .into()
@@ -316,7 +316,7 @@ pub(crate) fn developer_keyboard(
     widget::container(
         widget::row::with_capacity(3)
             .push(hexidecimal_keys(number_format, space_s))
-            .push(basic_keys(number_format, space_s))
+            .push(basic_keys(number_format, space_s, false))
             .push(developer_keys(space_s))
             .spacing(space_s),
     )

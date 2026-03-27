@@ -9,7 +9,7 @@ use crate::fl;
 use crate::keyboard::{advanced_keyboard, basic_keyboard, developer_keyboard};
 use crate::messages::{KeyPress, Message};
 use calclib::numformat::NumberFormat;
-use calclib::validator::validate;
+use calclib::validator::{validate, validate_developer};
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
 use cosmic::iced::alignment::Horizontal;
@@ -181,9 +181,25 @@ impl cosmic::Application for AppModel {
                 key,
                 modifiers,
                 text,
+                location,
                 ..
             }) = event
             {
+                // Numpad keys use `key_without_modifiers()` which ignores NumLock, so pressing
+                // numpad 1 yields key=Named::End even when NumLock is on. When text is available
+                // it means NumLock is on and we should insert that text instead of triggering the
+                // navigation action.
+                if location == keyboard::Location::Numpad {
+                    if let Some(t) = text {
+                        return match t.as_str() {
+                            "=" => Some(Message::KeyPressed(KeyPress::Equals)),
+                            s if !s.is_empty() => {
+                                Some(Message::KeyPressed(KeyPress::Insert(s.to_string())))
+                            }
+                            _ => None,
+                        };
+                    }
+                }
                 if modifiers.control() || modifiers.alt() {
                     return match key.as_ref() {
                         keyboard::Key::Character("d") => {
@@ -396,9 +412,11 @@ impl cosmic::Application for AppModel {
             //     }
             // }
             Message::Paste(value) => {
+                let is_developer = matches!(self.nav.active_data::<Page>(), Some(Page::Developer));
+                let validator = if is_developer { validate_developer } else { validate };
                 let filtered: String = value
                     .chars()
-                    .filter(|c| validate(c, self.number_format))
+                    .filter(|c| validator(c, self.number_format))
                     .collect();
 
                 let new_pos = insert_at_cursor(&mut self.input, &filtered, self.cursor_pos);
@@ -536,12 +554,12 @@ impl cosmic::Application for AppModel {
                         return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                     }
                     KeyPress::Lshift => {
-                        let new_pos = insert_at_cursor(&mut self.input, " << ", self.cursor_pos);
+                        let new_pos = insert_at_cursor(&mut self.input, " « ", self.cursor_pos);
                         self.cursor_pos = Some(new_pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                     }
                     KeyPress::Rshift => {
-                        let new_pos = insert_at_cursor(&mut self.input, " >> ", self.cursor_pos);
+                        let new_pos = insert_at_cursor(&mut self.input, " » ", self.cursor_pos);
                         self.cursor_pos = Some(new_pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                     }
@@ -567,9 +585,11 @@ impl cosmic::Application for AppModel {
                     KeyPress::Insert(text) => {
                         let substituted = substitute(&text);
                         let number_format = self.number_format;
+                        let is_developer = matches!(self.nav.active_data::<Page>(), Some(Page::Developer));
+                        let validator = if is_developer { validate_developer } else { validate };
                         let validated: String = substituted
                             .chars()
-                            .filter(|c| validate(c, number_format))
+                            .filter(|c| validator(c, number_format))
                             .collect();
                         if validated.is_empty() {
                             return Task::none();

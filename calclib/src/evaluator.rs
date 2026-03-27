@@ -6,6 +6,18 @@ use crate::token::{FunctionType, Token};
 use crate::utils::{change_sign, is_integer, is_negative};
 use statrs::function::{factorial, gamma::gamma};
 
+enum BitOps {
+    AND,
+    OR,
+    NAND,
+    NOR,
+    XOR,
+    XNOR,
+    LSHIFT,
+    RSHIFT,
+    MOD,
+}
+
 pub fn evaluate(input: &str, number_format: NumberFormat) -> Result<f64, CalcLibError> {
     let mut parser = Parser::new();
     let parse_val = parser.parse(input, number_format);
@@ -31,6 +43,15 @@ fn evaluate_expression(expression: Expression) -> Result<f64, CalcLibError> {
             let right_num = evaluate_expression(*right)?;
 
             match operator {
+                Token::And => bitwise_operation(left_num, right_num, BitOps::AND),
+                Token::Or => bitwise_operation(left_num, right_num, BitOps::OR),
+                Token::Nand => bitwise_operation(left_num, right_num, BitOps::NAND),
+                Token::Nor => bitwise_operation(left_num, right_num, BitOps::NOR),
+                Token::Xor => bitwise_operation(left_num, right_num, BitOps::XOR),
+                Token::Xnor => bitwise_operation(left_num, right_num, BitOps::XNOR),
+                Token::Lshift => bitwise_operation(left_num, right_num, BitOps::LSHIFT),
+                Token::Rshift => bitwise_operation(left_num, right_num, BitOps::RSHIFT),
+                Token::Mod => bitwise_operation(left_num, right_num, BitOps::MOD),
                 Token::Plus => Ok(left_num + right_num),
                 Token::Minus => Ok(left_num - right_num),
                 Token::Multiply => Ok(left_num * right_num),
@@ -70,15 +91,42 @@ fn evaluate_expression(expression: Expression) -> Result<f64, CalcLibError> {
 
             match function {
                 FunctionType::Log => Ok(expr_num.log10()),
-
                 FunctionType::Ln => Ok(expr_num.ln()),
                 FunctionType::LogTwo => Ok(expr_num.log2()),
                 FunctionType::SqRt => Ok(expr_num.sqrt()),
                 FunctionType::CbRt => Ok(expr_num.cbrt()),
                 FunctionType::Abs => Ok(expr_num.abs()),
+                FunctionType::Not => Ok((!(expr_num as i64)) as f64),
             }
         }
     }
+}
+
+fn bitwise_operation(left: f64, right: f64, op: BitOps) -> Result<f64, CalcLibError> {
+    let left = left as i64;
+    let right = right as i64;
+
+    let result = match op {
+        BitOps::AND => left & right,
+        BitOps::OR => left | right,
+        BitOps::NAND => !(left & right),
+        BitOps::NOR => !(left | right),
+        BitOps::XOR => left ^ right,
+        BitOps::XNOR => !(left ^ right),
+        BitOps::LSHIFT | BitOps::RSHIFT => {
+            if right < 0 || right >= 64 {
+                return Err(CalcLibError::ShiftOverflow());
+            }
+            if matches!(op, BitOps::LSHIFT) {
+                left << right
+            } else {
+                left >> right
+            }
+        }
+        BitOps::MOD => left % right,
+    };
+
+    Ok(result as f64)
 }
 
 /// Computes the factorial of a non-negative integer n.
@@ -265,6 +313,238 @@ mod tests {
         }
     }
 
+    // --- Bitwise operations ---
+    // Reference values (all formats reduce to the same i64 operands):
+    //   decimal 12 = hex C = binary 1100
+    //   decimal 10 = hex A = binary 1010
+    //
+    //   AND:   12 & 10  = 8   (0b1000)
+    //   OR:    12 | 10  = 14  (0b1110)
+    //   NAND: !(12 & 10) = -9
+    //   NOR:  !(12 | 10) = -15
+    //   XOR:   12 ^ 10  = 6   (0b0110)
+    //   XNOR: !(12 ^ 10) = -7
+    //   LSHIFT: 1 << 3  = 8
+    //   RSHIFT: 8 >> 3  = 1
+    //   MOD: 12 % 5 = 2
+
+    #[test]
+    fn test_bitwise_and() {
+        assert_eq!(evaluate("12 AND 10", NumberFormat::Decimal).unwrap(), 8.0);
+        assert_eq!(evaluate("C AND A", NumberFormat::Hexadecimal).unwrap(), 8.0);
+        assert_eq!(
+            evaluate("1100 AND 1010", NumberFormat::Binary).unwrap(),
+            8.0
+        );
+    }
+
+    #[test]
+    fn test_bitwise_or() {
+        assert_eq!(evaluate("12 OR 10", NumberFormat::Decimal).unwrap(), 14.0);
+        assert_eq!(evaluate("C OR A", NumberFormat::Hexadecimal).unwrap(), 14.0);
+        assert_eq!(
+            evaluate("1100 OR 1010", NumberFormat::Binary).unwrap(),
+            14.0
+        );
+    }
+
+    #[test]
+    fn test_bitwise_nand() {
+        assert_eq!(evaluate("12 NAND 10", NumberFormat::Decimal).unwrap(), -9.0);
+        assert_eq!(
+            evaluate("C NAND A", NumberFormat::Hexadecimal).unwrap(),
+            -9.0
+        );
+        assert_eq!(
+            evaluate("1100 NAND 1010", NumberFormat::Binary).unwrap(),
+            -9.0
+        );
+    }
+
+    #[test]
+    fn test_bitwise_nor() {
+        assert_eq!(evaluate("12 NOR 10", NumberFormat::Decimal).unwrap(), -15.0);
+        assert_eq!(
+            evaluate("C NOR A", NumberFormat::Hexadecimal).unwrap(),
+            -15.0
+        );
+        assert_eq!(
+            evaluate("1100 NOR 1010", NumberFormat::Binary).unwrap(),
+            -15.0
+        );
+    }
+
+    #[test]
+    fn test_bitwise_xor() {
+        assert_eq!(evaluate("12 XOR 10", NumberFormat::Decimal).unwrap(), 6.0);
+        assert_eq!(evaluate("C XOR A", NumberFormat::Hexadecimal).unwrap(), 6.0);
+        assert_eq!(
+            evaluate("1100 XOR 1010", NumberFormat::Binary).unwrap(),
+            6.0
+        );
+    }
+
+    #[test]
+    fn test_bitwise_xnor() {
+        assert_eq!(evaluate("12 XNOR 10", NumberFormat::Decimal).unwrap(), -7.0);
+        assert_eq!(
+            evaluate("C XNOR A", NumberFormat::Hexadecimal).unwrap(),
+            -7.0
+        );
+        assert_eq!(
+            evaluate("1100 XNOR 1010", NumberFormat::Binary).unwrap(),
+            -7.0
+        );
+    }
+
+    #[test]
+    fn test_bitwise_lshift() {
+        assert_eq!(evaluate("1 « 3", NumberFormat::Decimal).unwrap(), 8.0);
+        assert_eq!(evaluate("1 « 3", NumberFormat::Hexadecimal).unwrap(), 8.0);
+        assert_eq!(evaluate("1 « 11", NumberFormat::Binary).unwrap(), 8.0);
+    }
+
+    #[test]
+    fn test_bitwise_rshift() {
+        assert_eq!(evaluate("8 » 3", NumberFormat::Decimal).unwrap(), 1.0);
+        assert_eq!(evaluate("8 » 3", NumberFormat::Hexadecimal).unwrap(), 1.0);
+        assert_eq!(evaluate("1000 » 11", NumberFormat::Binary).unwrap(), 1.0);
+    }
+
+    #[test]
+    fn test_bitwise_and_with_zero() {
+        assert_eq!(evaluate("255 AND 0", NumberFormat::Decimal).unwrap(), 0.0);
+        assert_eq!(evaluate("0 AND 255", NumberFormat::Decimal).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_bitwise_or_with_zero() {
+        assert_eq!(evaluate("255 OR 0", NumberFormat::Decimal).unwrap(), 255.0);
+        assert_eq!(evaluate("0 OR 0", NumberFormat::Decimal).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_bitwise_xor_with_self() {
+        // Any value XOR itself is 0
+        assert_eq!(evaluate("42 XOR 42", NumberFormat::Decimal).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_bitwise_and_with_self() {
+        // Any value AND itself is itself
+        assert_eq!(evaluate("42 AND 42", NumberFormat::Decimal).unwrap(), 42.0);
+    }
+
+    #[test]
+    fn test_bitwise_lshift_by_zero() {
+        assert_eq!(evaluate("5 « 0", NumberFormat::Decimal).unwrap(), 5.0);
+    }
+
+    #[test]
+    fn test_bitwise_rshift_by_zero() {
+        assert_eq!(evaluate("5 » 0", NumberFormat::Decimal).unwrap(), 5.0);
+    }
+
+    #[test]
+    fn test_bitwise_nand_with_zero() {
+        // !(0 & 0) = !0 = -1
+        assert_eq!(evaluate("0 NAND 0", NumberFormat::Decimal).unwrap(), -1.0);
+        // !(x & 0) = !0 = -1 for any x
+        assert_eq!(evaluate("255 NAND 0", NumberFormat::Decimal).unwrap(), -1.0);
+    }
+
+    #[test]
+    fn test_bitwise_nor_with_zero() {
+        // !(0 | 0) = !0 = -1
+        assert_eq!(evaluate("0 NOR 0", NumberFormat::Decimal).unwrap(), -1.0);
+    }
+
+    #[test]
+    fn test_bitwise_xnor_with_self() {
+        // !(x ^ x) = !0 = -1
+        assert_eq!(evaluate("42 XNOR 42", NumberFormat::Decimal).unwrap(), -1.0);
+    }
+
+    #[test]
+    fn test_bitwise_float_operands_are_truncated() {
+        // 5.9 truncates to 5 (0b0101), 3.9 truncates to 3 (0b0011)
+        assert_eq!(evaluate("5.9 AND 3.9", NumberFormat::Decimal).unwrap(), 1.0); // 5 & 3 = 1, not 6 & 4 = 4
+        assert_eq!(evaluate("5.9 OR 3.9", NumberFormat::Decimal).unwrap(), 7.0); // 5 | 3 = 7
+        assert_eq!(evaluate("5.9 XOR 3.9", NumberFormat::Decimal).unwrap(), 6.0);
+        // 5 ^ 3 = 6
+    }
+
+    #[test]
+    fn test_bitwise_negative_operands() {
+        // -1 in two's complement is all 1s, so:
+        // -1 AND x = x
+        assert_eq!(evaluate("-1 AND 5", NumberFormat::Decimal).unwrap(), 5.0);
+        // -1 OR x = -1
+        assert_eq!(evaluate("-1 OR 5", NumberFormat::Decimal).unwrap(), -1.0);
+        // -1 XOR x = ~x (bitwise complement)
+        assert_eq!(evaluate("-1 XOR 5", NumberFormat::Decimal).unwrap(), -6.0);
+    }
+
+    #[test]
+    fn test_bitwise_rshift_negative_number() {
+        // Rust uses arithmetic (sign-extending) right shift for i64
+        assert_eq!(evaluate("-8 » 1", NumberFormat::Decimal).unwrap(), -4.0);
+        assert_eq!(evaluate("-1 » 1", NumberFormat::Decimal).unwrap(), -1.0); // sign extends forever
+    }
+
+    #[test]
+    fn test_bitwise_lshift_overflow_returns_error() {
+        let result = evaluate("1 « 64", NumberFormat::Decimal);
+        assert_eq!(result, Err(CalcLibError::ShiftOverflow()));
+    }
+
+    #[test]
+    fn test_bitwise_rshift_overflow_returns_error() {
+        let result = evaluate("1 » 64", NumberFormat::Decimal);
+        assert_eq!(result, Err(CalcLibError::ShiftOverflow()));
+    }
+
+    #[test]
+    fn test_bitwise_shift_negative_amount_returns_error() {
+        assert_eq!(
+            evaluate("1 « -1", NumberFormat::Decimal),
+            Err(CalcLibError::ShiftOverflow())
+        );
+        assert_eq!(
+            evaluate("1 » -1", NumberFormat::Decimal),
+            Err(CalcLibError::ShiftOverflow())
+        );
+    }
+
+    #[test]
+    fn test_mod() {
+        assert_eq!(evaluate("12 MOD 5", NumberFormat::Decimal).unwrap(), 2.0); // 12 % 5 = 2
+        assert_eq!(
+            evaluate("12 MOD 5", NumberFormat::Hexadecimal).unwrap(),
+            3.0
+        ); // 18 % 5 = 3
+        assert_eq!(evaluate("1100 MOD 101", NumberFormat::Binary).unwrap(), 2.0);
+        // 12 % 5 = 2
+    }
+
+    #[test]
+    fn test_bitwise_shift_max_valid_amount() {
+        // 63 is the largest valid shift amount
+        assert_eq!(
+            evaluate("1 « 63", NumberFormat::Decimal).unwrap(),
+            i64::MIN as f64
+        );
+        assert_eq!(evaluate("1 » 63", NumberFormat::Decimal).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_bitwise_precedence_lower_than_arithmetic() {
+        // BIT < ADD, so: 4+4 AND 6 = (4+4) AND 6 = 8 AND 6 = 0
+        assert_eq!(evaluate("4+4 AND 6", NumberFormat::Decimal).unwrap(), 0.0);
+        // 4+4 OR 3 = 8 OR 3 = 11
+        assert_eq!(evaluate("4+4 OR 3", NumberFormat::Decimal).unwrap(), 11.0);
+    }
+
     #[test]
     fn test_math_functions() {
         let inputs = vec![
@@ -275,6 +555,7 @@ mod tests {
             ("cbrt(8)", 2.0),
             ("abs(-5)", 5.0),
             ("abs(3)", 3.0),
+            ("NOT(4)", -5.0),
         ];
 
         for (input, expected) in inputs {

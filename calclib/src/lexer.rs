@@ -42,6 +42,8 @@ impl Lexer {
             '÷' => Ok(Token::Divide),
             '^' => Ok(Token::Caret),
             '!' => Ok(Token::Exclamation),
+            '«' => Ok(Token::Lshift),
+            '»' => Ok(Token::Rshift),
             '.' | '0'..='9' => Ok(Token::Number(self.read_number()?)),
             'a'..='z' | 'A'..='Z' => {
                 let ident = self.read_ident();
@@ -53,6 +55,14 @@ impl Lexer {
                     "sqrt" => Ok(Token::Function(FunctionType::SqRt)),
                     "cbrt" => Ok(Token::Function(FunctionType::CbRt)),
                     "abs" => Ok(Token::Function(FunctionType::Abs)),
+                    "NOT" => Ok(Token::Function(FunctionType::Not)),
+                    "AND" => Ok(Token::And),
+                    "OR" => Ok(Token::Or),
+                    "NAND" => Ok(Token::Nand),
+                    "NOR" => Ok(Token::Nor),
+                    "XNOR" => Ok(Token::Xnor),
+                    "XOR" => Ok(Token::Xor),
+                    "MOD" => Ok(Token::Mod),
                     _ => {
                         if self.is_hexadecimal(&ident) {
                             hex_to_dec(&ident)
@@ -188,7 +198,7 @@ impl Lexer {
         match hex_to_dec(&s) {
             Some(value) => Ok(value),
             None => Err(CalcLibError::HexConversionError(format!(
-                "Failed to parse hexadecimal number {}",
+                "Bad Hex format {}",
                 s
             ))),
         }
@@ -209,7 +219,7 @@ impl Lexer {
         match bin_to_dec(&s) {
             Some(value) => Ok(value),
             None => Err(CalcLibError::BinConversionError(format!(
-                "Failed to parse binary number {}",
+                "Bad Bin format {}",
                 s
             ))),
         }
@@ -310,6 +320,7 @@ mod tests {
             ("sqrt", Token::Function(FunctionType::SqRt)),
             ("cbrt", Token::Function(FunctionType::CbRt)),
             ("abs", Token::Function(FunctionType::Abs)),
+            ("NOT", Token::Function(FunctionType::Not)),
         ];
 
         for (input, expected) in inputs {
@@ -327,5 +338,32 @@ mod tests {
         l.init(input);
         let result = l.next_token();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_lexer_bitwise_keywords() {
+        let inputs = vec![
+            ("AND", Token::And),
+            ("OR", Token::Or),
+            ("NAND", Token::Nand),
+            ("NOR", Token::Nor),
+            ("XOR", Token::Xor),
+            ("XNOR", Token::Xnor),
+            ("MOD", Token::Mod),
+        ];
+
+        for (input, expected) in inputs {
+            let mut l = Lexer::new(NumberFormat::Decimal);
+            l.init(input);
+            assert_eq!(l.next_token(), Ok(expected), "Failed to lex '{}'", input);
+        }
+    }
+
+    #[test]
+    fn test_lexer_shift_operators() {
+        let mut l = Lexer::new(NumberFormat::Decimal);
+        l.init("«»");
+        assert_eq!(l.next_token(), Ok(Token::Lshift));
+        assert_eq!(l.next_token(), Ok(Token::Rshift));
     }
 }

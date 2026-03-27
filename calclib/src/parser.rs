@@ -288,6 +288,23 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_unary_expressions() {
+        let input: Vec<(&str, Result<Option<Expression>, CalcLibError>)> = vec![(
+            "3!",
+            Ok(Some(Expression::Unary {
+                operator: Token::Exclamation,
+                expression: Box::new(Expression::Number { value: 3.0 }),
+            })),
+        )];
+
+        let mut p = Parser::new();
+        for (input, expected) in input {
+            let result = p.parse(input, NumberFormat::Decimal);
+            assert_eq!(result, expected);
+        }
+    }
+
+    #[test]
     fn test_parser_complete_complex_expressions() {
         let input: Vec<(&str, Result<Option<Expression>, CalcLibError>)> = vec![
             (
@@ -386,6 +403,13 @@ mod tests {
                 Ok(Some(Expression::Function {
                     function: FunctionType::SqRt,
                     argument: Box::new(Expression::Number { value: 16.0 }),
+                })),
+            ),
+            (
+                "NOT(3)",
+                Ok(Some(Expression::Function {
+                    function: FunctionType::Not,
+                    argument: Box::new(Expression::Number { value: 3.0 }),
                 })),
             ),
         ];

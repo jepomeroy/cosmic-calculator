@@ -18,4 +18,6 @@ pub enum CalcLibError {
     FactorialComputeError(),
     #[error("Unsupported Operator")]
     UnsupportedOperator(),
+    #[error("Shift amount must be between 0 and 63")]
+    ShiftOverflow(),
 }
