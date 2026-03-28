@@ -190,6 +190,9 @@ impl cosmic::Application for AppModel {
                 // it means NumLock is on and we should insert that text instead of triggering the
                 // navigation action.
                 if location == keyboard::Location::Numpad {
+                    if matches!(key, keyboard::Key::Named(keyboard::key::Named::Enter)) {
+                        return Some(Message::KeyPressed(KeyPress::Equals));
+                    }
                     if let Some(t) = text {
                         return match t.as_str() {
                             "=" => Some(Message::KeyPressed(KeyPress::Equals)),
