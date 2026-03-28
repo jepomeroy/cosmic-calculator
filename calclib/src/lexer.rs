@@ -75,7 +75,6 @@ impl Lexer {
                                     )))
                                 })
                         } else {
-                            println!("{}", ident.as_str());
                             Err(CalcLibError::SyntaxError(format!(
                                 "Unknown identifier: '{}'",
                                 ident.as_str()

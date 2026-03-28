@@ -3,9 +3,14 @@ use crate::numformat::NumberFormat;
 /// Validates if the input character is allowed in developer mode (binary, hex, or decimal),
 /// which disallows the decimal point in addition to normal format restrictions.
 pub fn validate_developer(input: &char, number_format: NumberFormat) -> bool {
+    if *input == 'e' && number_format == NumberFormat::Decimal {
+        return false;
+    }
+
     if *input == '.' {
         return false;
     }
+
     validate(input, number_format)
 }
 
@@ -13,11 +18,13 @@ pub fn validate_developer(input: &char, number_format: NumberFormat) -> bool {
 pub fn validate(input: &char, number_format: NumberFormat) -> bool {
     let symbols_match = matches!(
         input,
-        '+' | '-' | '*' | '/' | '(' | ')' | '^' | '.' | '=' | '!' | '×' | '÷' | '−'
+        '+' | '-' | '*' | '/' | '(' | ')' | '^' | '=' | '!' | '×' | '÷' | '−'
     );
 
     match number_format {
-        NumberFormat::Decimal => symbols_match || matches!(input, '0'..='9'),
+        NumberFormat::Decimal => {
+            symbols_match || matches!(input, '0'..='9') || matches!(input, '.' | 'e')
+        }
         NumberFormat::Hexadecimal => {
             symbols_match || matches!(input, '0'..='9' | 'a'..='f' | 'A'..='F')
         }
@@ -31,7 +38,7 @@ mod tests {
     #[test]
     fn test_validate_with_valid_bin_chars() {
         let valid_chars = vec![
-            '0', '1', '+', '-', '*', '/', '(', ')', '.', '^', '!', '=', '×', '÷', '−',
+            '0', '1', '+', '-', '*', '/', '(', ')', '^', '!', '=', '×', '÷', '−',
         ];
 
         for ch in valid_chars {
@@ -48,10 +55,10 @@ mod tests {
         // Invalid insert action
         let invalid_chars = vec![
             ' ', '@', '#', '$', '%', '&', '_', '[', ']', '{', '}', ';', ':', '"', '\'', '<', '>',
-            ',', '?', '\\', '|', '~', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k',
-            'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B',
-            'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
-            'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '2', '3', '4', '5', '6', '7', '8', '9',
+            ',', '.', '?', '\\', '|', '~', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+            'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A',
+            'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
+            'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '2', '3', '4', '5', '6', '7', '8', '9',
         ];
 
         for ch in invalid_chars {
@@ -67,7 +74,7 @@ mod tests {
     fn test_validate_with_valid_dec_chars() {
         let valid_chars = vec![
             '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '-', '*', '/', '(', ')', '.',
-            '^', '!', '=', '×', '÷', '−',
+            '^', '!', '=', '×', '÷', '−', 'e',
         ];
 
         for ch in valid_chars {
@@ -84,10 +91,10 @@ mod tests {
         // Invalid insert action
         let invalid_chars = vec![
             ' ', '@', '#', '$', '%', '&', '_', '[', ']', '{', '}', ';', ':', '"', '\'', '<', '>',
-            ',', '?', '\\', '|', '~', '`', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k',
-            'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B',
-            'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
-            'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+            ',', '?', '\\', '|', '~', '`', 'a', 'b', 'c', 'd', 'f', 'g', 'h', 'i', 'j', 'k', 'l',
+            'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C',
+            'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
+            'U', 'V', 'W', 'X', 'Y', 'Z',
         ];
 
         for ch in invalid_chars {
@@ -103,8 +110,7 @@ mod tests {
     fn test_validate_with_valid_hex_chars() {
         let valid_chars = vec![
             '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'A',
-            'B', 'C', 'D', 'E', 'F', '+', '-', '*', '/', '(', ')', '.', '^', '!', '=', '×', '÷',
-            '−',
+            'B', 'C', 'D', 'E', 'F', '+', '-', '*', '/', '(', ')', '^', '!', '=', '×', '÷', '−',
         ];
 
         for ch in valid_chars {
@@ -120,7 +126,7 @@ mod tests {
     fn test_validate_with_invalid_hex_chars() {
         // Invalid insert action
         let invalid_chars = vec![
-            ' ', '@', '#', '$', '%', '&', '_', '[', ']', '{', '}', ';', ':', '"', '\'', '<', '>',
+            '.', '@', '#', '$', '%', '&', '_', '[', ']', '{', '}', ';', ':', '"', '\'', '<', '>',
             ',', '?', '\\', '|', '~', '`', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q',
             'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
             'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', ' ',
@@ -164,8 +170,8 @@ mod tests {
     #[test]
     fn test_developer_decimal_allows_digits_and_operators() {
         let valid_chars = vec![
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            '+', '-', '*', '/', '(', ')', '^', '!', '=', '×', '÷', '−',
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '-', '*', '/', '(', ')', '^',
+            '!', '=', '×', '÷', '−',
         ];
         for ch in valid_chars {
             assert!(
@@ -179,9 +185,8 @@ mod tests {
     #[test]
     fn test_developer_hex_allows_hex_digits_and_operators() {
         let valid_chars = vec![
-            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-            'a', 'b', 'c', 'd', 'e', 'f', 'A', 'B', 'C', 'D', 'E', 'F',
-            '+', '-', '*', '/', '(', ')', '^', '!', '=', '×', '÷', '−',
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'A',
+            'B', 'C', 'D', 'E', 'F', '+', '-', '*', '/', '(', ')', '^', '!', '=', '×', '÷', '−',
         ];
         for ch in valid_chars {
             assert!(
@@ -207,8 +212,7 @@ mod tests {
     #[test]
     fn test_developer_binary_allows_only_zero_one_and_operators() {
         let valid_chars = vec![
-            '0', '1',
-            '+', '-', '*', '/', '(', ')', '^', '!', '=', '×', '÷', '−',
+            '0', '1', '+', '-', '*', '/', '(', ')', '^', '!', '=', '×', '÷', '−',
         ];
         for ch in valid_chars {
             assert!(

@@ -6,16 +6,16 @@ pub(crate) fn change_sign(num: f64, make_negative: bool) -> f64 {
     if make_negative { -num.abs() } else { num.abs() }
 }
 
-/// Returns `true` if `num` is `Some` value whose fractional part is zero.
+/// Returns `true` if `num` is a value whose fractional part is zero.
 ///
-/// Returns `false` for `None` or any value with a non-zero fractional part.
+/// Returns `false` for any value with a non-zero fractional part.
 pub(crate) fn is_integer(num: f64) -> bool {
     num.fract() == 0.0
 }
 
-/// Returns `true` if `num` is `Some` value that is strictly less than zero.
+/// Returns `true` if `num` is a value that is strictly less than zero.
 ///
-/// Returns `false` for `None`, zero, or any positive value.
+/// Returns `false` for zero or any positive value.
 pub(crate) fn is_negative(num: f64) -> bool {
     num < 0.0
 }

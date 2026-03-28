@@ -123,7 +123,13 @@ fn bitwise_operation(left: f64, right: f64, op: BitOps) -> Result<f64, CalcLibEr
                 left >> right
             }
         }
-        BitOps::MOD => left % right,
+        BitOps::MOD => {
+            if right == 0 {
+                return Err(CalcLibError::DivisionByZero());
+            }
+
+            left % right
+        }
     };
 
     Ok(result as f64)
@@ -525,6 +531,12 @@ mod tests {
         ); // 18 % 5 = 3
         assert_eq!(evaluate("1100 MOD 101", NumberFormat::Binary).unwrap(), 2.0);
         // 12 % 5 = 2
+
+        // test for mod 0
+        assert_eq!(
+            evaluate("12 MOD 0", NumberFormat::Decimal),
+            Err(CalcLibError::DivisionByZero())
+        )
     }
 
     #[test]

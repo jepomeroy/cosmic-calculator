@@ -7,17 +7,20 @@ pub enum EvalResult {
 
 /// Evaluate the current input and update the result and history
 pub(crate) fn evaluate_input(input: &str, numformat: NumberFormat) -> EvalResult {
-    let expression = input
+    let mut expression = input
         .replace('×', "*")
         .replace('÷', "/")
         .replace('−', "-")
         .replace('π', format!("({})", &std::f64::consts::PI).as_str())
-        .replace('e', format!("({})", std::f64::consts::E).as_str())
         .replace('²', "^2")
         .replace('³', "^3")
         .replace('√', "sqrt")
         .replace('∛', "cbrt")
         .replace("log₂", "logtwo");
+
+    if numformat == NumberFormat::Decimal {
+        expression = expression.replace('e', format!("({})", std::f64::consts::E).as_str());
+    }
 
     match evaluate(&expression, numformat) {
         Ok(result) => EvalResult::Success {

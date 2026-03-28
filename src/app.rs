@@ -388,32 +388,13 @@ impl cosmic::Application for AppModel {
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            // Message::InputChanged(value) => {
-            //     self.cursor_pos = None;
-            //     if value.contains('=') || value.contains('\n') {
-            //         return self.evaluate();
-            //     }
-
-            //     println!("Presses key: {value}");
-
-            //     let substituted = substitute(&value);
-            //     let number_format = self.number_format;
-            //     let filtered: String = substituted
-            //         .chars()
-            //         .filter(|c| validate(c, number_format))
-            //         .collect();
-            //     // Reject a closing paren that would leave more closing than opening,
-            //     // matching the same rule applied by the ")" button.
-            //     if get_paren_count(&filtered) < 0 {
-            //         // Revert: leave self.input unchanged; the widget will re-sync on
-            //         // the next frame.
-            //     } else {
-            //         self.input = filtered;
-            //     }
-            // }
             Message::Paste(value) => {
                 let is_developer = matches!(self.nav.active_data::<Page>(), Some(Page::Developer));
-                let validator = if is_developer { validate_developer } else { validate };
+                let validator = if is_developer {
+                    validate_developer
+                } else {
+                    validate
+                };
                 let filtered: String = value
                     .chars()
                     .filter(|c| validator(c, self.number_format))
@@ -446,11 +427,23 @@ impl cosmic::Application for AppModel {
                         return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
                     }
                     KeyPress::Backspace => {
-                        // Button backspace always removes the last character
-                        let mut chars = self.input.chars();
-                        chars.next_back();
-                        self.input = chars.as_str().to_string();
-                        return text_input::move_cursor_to_end(Id::new(INPUT_ID));
+                        let char_count = self.input.chars().count();
+                        let pos = self.cursor_pos.unwrap_or(char_count);
+                        if pos == 0 || char_count == 0 {
+                            return Task::none();
+                        }
+                        // Remove the character immediately before the cursor (char index pos - 1)
+                        let remove_idx = pos - 1;
+                        let byte_pos = self
+                            .input
+                            .char_indices()
+                            .nth(remove_idx)
+                            .map(|(i, _)| i)
+                            .unwrap_or(self.input.len());
+                        self.input.remove(byte_pos);
+                        let new_pos = remove_idx;
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                     }
                     KeyPress::Negate => {
                         if self.input.starts_with('−') || self.input.starts_with('-') {
@@ -585,8 +578,13 @@ impl cosmic::Application for AppModel {
                     KeyPress::Insert(text) => {
                         let substituted = substitute(&text);
                         let number_format = self.number_format;
-                        let is_developer = matches!(self.nav.active_data::<Page>(), Some(Page::Developer));
-                        let validator = if is_developer { validate_developer } else { validate };
+                        let is_developer =
+                            matches!(self.nav.active_data::<Page>(), Some(Page::Developer));
+                        let validator = if is_developer {
+                            validate_developer
+                        } else {
+                            validate
+                        };
                         let validated: String = substituted
                             .chars()
                             .filter(|c| validator(c, number_format))
