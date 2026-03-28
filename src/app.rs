@@ -1,11 +1,18 @@
 // SPDX-License-Identifier: MIT
 
+use crate::calculator::get_paren_count;
+use crate::calculator::insert_at_cursor;
+use crate::calculator::substitute;
+use crate::calculator::{EvalResult, evaluate_input, format_f64};
 use crate::config::Config;
 use crate::fl;
-use calclib::evaluator::evaluate;
+use crate::keyboard::{advanced_keyboard, basic_keyboard, developer_keyboard};
+use crate::messages::{KeyPress, Message};
+use calclib::numformat::NumberFormat;
+use calclib::validator::{validate, validate_developer};
 use cosmic::app::context_drawer;
 use cosmic::cosmic_config::{self, CosmicConfigEntry};
-use cosmic::iced::alignment::{Horizontal, Vertical};
+use cosmic::iced::alignment::Horizontal;
 use cosmic::iced::{Alignment, Color, Length, Padding, clipboard, keyboard};
 use cosmic::prelude::*;
 use cosmic::widget::{
@@ -35,29 +42,16 @@ pub struct AppModel {
     config: Config,
     /// Handle to the config context for persisting changes.
     config_handler: Option<cosmic_config::Config>,
-    /// Calculator history (expression, result) pairs
-    history: Vec<(String, String)>,
+    /// Calculator history as (expression, f64 result) pairs
+    history: Vec<(String, f64)>,
     /// Calculator input
     input: String,
-    /// Calculator result
-    result: String,
+    /// Calculator result value, or an error string
+    result: Option<Result<f64, String>>,
     /// Cursor position set by function buttons (e.g. inside `abs()`); None means append to end
     cursor_pos: Option<usize>,
-}
-
-/// Messages emitted by the application and its widgets.
-#[derive(Debug, Clone)]
-pub enum Message {
-    InputChanged(String),
-    KeyPressed(String),
-    ModeSelected(String),
-    CopyResultToInput(String),
-    LaunchUrl(String),
-    ToggleContextPage(ContextPage),
-    ArrowLeft,
-    ArrowRight,
-    Home,
-    End,
+    /// Character set used for input validation on the developer page
+    number_format: NumberFormat,
 }
 
 /// Create a COSMIC application from the app model
@@ -121,13 +115,15 @@ impl cosmic::Application for AppModel {
         if let Some(page) = Page::from_str(&config.page) {
             let target = nav.iter().find(|&id| {
                 nav.data::<Page>(id)
-                    .map(|data| std::mem::discriminant(data) == std::mem::discriminant(&page))
+                    .map(|data| data == &page)
                     .unwrap_or(false)
             });
             if let Some(id) = target {
                 nav.activate(id);
             }
         }
+
+        let number_format = NumberFormat::from_str(&config.number_format).unwrap_or_default();
 
         // Construct the app model with the runtime's core.
         let mut app = AppModel {
@@ -140,8 +136,9 @@ impl cosmic::Application for AppModel {
             config_handler,
             history: Vec::new(),
             input: "".to_string(),
-            result: "0".to_string(),
+            result: None,
             cursor_pos: None,
+            number_format,
         };
 
         // Create a startup command that sets the window title and size.
@@ -179,8 +176,44 @@ impl cosmic::Application for AppModel {
     }
 
     fn subscription(&self) -> cosmic::iced::Subscription<Message> {
-        cosmic::iced::event::listen_with(|event, _status, _window_id| {
-            if let cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) = event {
+        cosmic::iced::event::listen_with(|event, _status, _window_id| -> Option<Message> {
+            if let cosmic::iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key,
+                modifiers,
+                text,
+                location,
+                ..
+            }) = event
+            {
+                // Numpad keys use `key_without_modifiers()` which ignores NumLock, so pressing
+                // numpad 1 yields key=Named::End even when NumLock is on. When text is available
+                // it means NumLock is on and we should insert that text instead of triggering the
+                // navigation action.
+                if location == keyboard::Location::Numpad {
+                    if let Some(t) = text {
+                        return match t.as_str() {
+                            "=" => Some(Message::KeyPressed(KeyPress::Equals)),
+                            s if !s.is_empty() => {
+                                Some(Message::KeyPressed(KeyPress::Insert(s.to_string())))
+                            }
+                            _ => None,
+                        };
+                    }
+                }
+                if modifiers.control() || modifiers.alt() {
+                    return match key.as_ref() {
+                        keyboard::Key::Character("d") => {
+                            Some(Message::NumberFormatSelected(NumberFormat::Decimal))
+                        }
+                        keyboard::Key::Character("h") => {
+                            Some(Message::NumberFormatSelected(NumberFormat::Hexadecimal))
+                        }
+                        keyboard::Key::Character("b") => {
+                            Some(Message::NumberFormatSelected(NumberFormat::Binary))
+                        }
+                        _ => None,
+                    };
+                }
                 match key {
                     keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
                         Some(Message::ArrowLeft)
@@ -188,13 +221,18 @@ impl cosmic::Application for AppModel {
                     keyboard::Key::Named(keyboard::key::Named::ArrowRight) => {
                         Some(Message::ArrowRight)
                     }
-                    keyboard::Key::Named(keyboard::key::Named::Home) => {
-                        Some(Message::Home)
+                    keyboard::Key::Named(keyboard::key::Named::Home) => Some(Message::Home),
+                    keyboard::Key::Named(keyboard::key::Named::End) => Some(Message::End),
+                    keyboard::Key::Named(keyboard::key::Named::Backspace) => {
+                        Some(Message::KeyPressed(KeyPress::Backspace))
                     }
-                    keyboard::Key::Named(keyboard::key::Named::End) => {
-                        Some(Message::End)
+                    keyboard::Key::Named(keyboard::key::Named::Enter) => {
+                        Some(Message::KeyPressed(KeyPress::Equals))
                     }
-                    _ => None,
+                    _ => text.and_then(|t| match t.as_str() {
+                        "=" => Some(Message::KeyPressed(KeyPress::Equals)),
+                        s => Some(Message::KeyPressed(KeyPress::Insert(s.to_string()))),
+                    }),
                 }
             } else {
                 None
@@ -213,10 +251,12 @@ impl cosmic::Application for AppModel {
         let history_items: Vec<Element<'_, Self::Message>> = self
             .history
             .iter()
-            .map(|(expr, result)| {
+            .map(|(expr, value)| {
+                let result_str = format_f64(*value, self.number_format);
+                let input_str = format_f64(*value, self.number_format);
                 widget::row::with_capacity(2)
                     .push(
-                        text(format!("{} = {}", expr, result))
+                        text(format!("{} = {}", expr, result_str))
                             .size(14)
                             .width(Length::Fill)
                             .align_x(Horizontal::Right),
@@ -224,7 +264,7 @@ impl cosmic::Application for AppModel {
                     .push(widget::tooltip(
                         button::icon(icon::from_name("edit-copy-symbolic").size(14))
                             .extra_small()
-                            .on_press(Message::CopyResultToInput(result.clone())),
+                            .on_press(Message::CopyResultToInput(input_str)),
                         text("Copy to input"),
                         widget::tooltip::Position::Left,
                     ))
@@ -252,8 +292,8 @@ impl cosmic::Application for AppModel {
             .push(
                 text_input("", &self.input)
                     .id(Id::new(INPUT_ID))
-                    .on_input(Message::InputChanged)
-                    .on_submit(|_| Message::KeyPressed("=".to_string()))
+                    .on_paste(|s| Message::Paste(s))
+                    .on_submit(|_| Message::KeyPressed(KeyPress::Equals))
                     .always_active()
                     .size(24)
                     .padding(Padding::new(20.0)),
@@ -261,110 +301,37 @@ impl cosmic::Application for AppModel {
             .align_y(Alignment::End)
             .spacing(space_s);
 
-        let advanced_keyboard: Element<_> = widget::column::with_capacity(1)
-            .push(
-                widget::row::with_capacity(3)
-                    .push(make_button("Log", None))
-                    .push(make_button("Ln", None))
-                    .push(make_button("Log₂x", None))
-                    .spacing(space_s),
-            )
-            .push(
-                widget::row::with_capacity(3)
-                    .push(make_button("1/x", None))
-                    .push(make_button("√", None))
-                    .push(make_button("∛", None))
-                    .spacing(space_s),
-            )
-            .push(
-                widget::row::with_capacity(3)
-                    .push(make_button("x²", None))
-                    .push(make_button("x³", None))
-                    .push(make_button("xʸ", None))
-                    .spacing(space_s),
-            )
-            .push(
-                widget::row::with_capacity(3)
-                    .push(make_button("π", None))
-                    .push(make_button("e", None))
-                    .push(make_button("Abs", None))
-                    .spacing(space_s),
-            )
-            .spacing(space_s)
+        let charset_options: &'static [&'static str] = &["Decimal", "Hexadecimal", "Binary"];
+        let charset_selected: Option<usize> = Some(match self.number_format {
+            NumberFormat::Decimal => 0,
+            NumberFormat::Hexadecimal => 1,
+            NumberFormat::Binary => 2,
+        });
+
+        let calculator_mode: Element<_> = mode_buttons_row(space_s).into();
+
+        let developer_mode_row: Element<_> = widget::row::with_capacity(3)
+            .push(mode_buttons_row(space_s))
+            .push(widget::horizontal_space())
+            .push(widget::dropdown(charset_options, charset_selected, |idx| {
+                Message::NumberFormatSelected(match idx {
+                    1 => NumberFormat::Hexadecimal,
+                    2 => NumberFormat::Binary,
+                    _ => NumberFormat::Decimal,
+                })
+            }))
+            .align_y(Alignment::Center)
             .into();
 
-        let basic_keyboard: Element<_> = widget::column::with_capacity(1)
-            .push(
-                widget::row::with_capacity(5)
-                    .push(make_button("AC", None))
-                    .push(make_button("C", None))
-                    .push(make_button("±", None))
-                    .push(make_button("%", None))
-                    .push(make_button("⌫", None))
-                    .spacing(space_s),
-            )
-            .push(
-                widget::row::with_capacity(5)
-                    .push(make_button("7", None))
-                    .push(make_button("8", None))
-                    .push(make_button("9", None))
-                    .push(make_button("÷", None))
-                    .push(make_button("(", None))
-                    .spacing(space_s),
-            )
-            .push(
-                widget::row::with_capacity(5)
-                    .push(make_button("4", None))
-                    .push(make_button("5", None))
-                    .push(make_button("6", None))
-                    .push(make_button("×", None))
-                    .push(make_button(")", None))
-                    .spacing(space_s),
-            )
-            .push(
-                widget::row::with_capacity(5)
-                    .push(make_button("1", None))
-                    .push(make_button("2", None))
-                    .push(make_button("3", None))
-                    .push(make_button("−", None))
-                    .push(make_button("!", None))
-                    .spacing(space_s),
-            )
-            .push(
-                widget::row::with_capacity(5)
-                    .push(make_button("0", None))
-                    .push(make_button(".", None))
-                    .push(make_button("=", None))
-                    .push(make_button("+", None))
-                    .push(make_button("Ans", None))
-                    .spacing(space_s),
-            )
-            .spacing(space_s)
-            .into();
-
-        let calculator_mode: Element<_> = widget::column::with_capacity(1)
-            .push(
-                widget::row::with_capacity(3)
-                    .push(icon_button_view(
-                        "basic".to_string(),
-                        include_bytes!("../resources/basic.svg"),
-                    ))
-                    .push(icon_button_view(
-                        "advanced".to_string(),
-                        include_bytes!("../resources/advanced.svg"),
-                    ))
-                    .push(icon_button_view(
-                        "developer".to_string(),
-                        include_bytes!("../resources/developer.svg"),
-                    ))
-                    .spacing(space_s),
-            )
-            .spacing(space_s)
-            .into();
+        let result_display = match &self.result {
+            Some(Ok(value)) => format_f64(*value, self.number_format),
+            Some(Err(err)) => err.clone(),
+            None => "".to_string(),
+        };
 
         let result = widget::row::with_capacity(1)
             .push(
-                text(self.result.as_str())
+                text(result_display)
                     .size(24)
                     .width(Length::Fill)
                     .align_x(Horizontal::Right),
@@ -373,51 +340,35 @@ impl cosmic::Application for AppModel {
             .spacing(space_s);
 
         let content: Element<_> = match self.nav.active_data::<Page>().unwrap() {
-            Page::Basic => widget::column::with_capacity(5)
+            Page::Basic => widget::column::with_capacity(6)
                 .push(history)
                 .push(input)
                 .push(result)
-                .push(
-                    widget::container(basic_keyboard)
-                        .width(Length::Fill)
-                        .align_x(Horizontal::Center),
-                )
+                .push(basic_keyboard(self.number_format, space_s))
                 .push(widget::vertical_space().height(25))
                 .push(calculator_mode)
                 .spacing(space_s)
                 .into(),
 
-            Page::Advanced => widget::column::with_capacity(1)
+            Page::Advanced => widget::column::with_capacity(6)
                 .push(history)
                 .push(input)
                 .push(result)
-                .push(
-                    widget::container(
-                        widget::row::with_capacity(2)
-                            .push(basic_keyboard)
-                            .push(advanced_keyboard)
-                            .spacing(space_s),
-                    )
-                    .width(Length::Fill)
-                    .align_x(Horizontal::Center),
-                )
+                .push(advanced_keyboard(self.number_format, space_s))
                 .push(widget::vertical_space().height(25))
                 .push(calculator_mode)
                 .spacing(space_s)
                 .into(),
 
-            Page::Developer => {
-                let header = widget::row::with_capacity(2)
-                    .push(widget::text::title1(fl!("developer")))
-                    .align_y(Alignment::End)
-                    .spacing(space_s);
-
-                widget::column::with_capacity(1)
-                    .push(header)
-                    .push(calculator_mode)
-                    .spacing(space_s)
-                    .into()
-            }
+            Page::Developer => widget::column::with_capacity(6)
+                .push(history)
+                .push(input)
+                .push(result)
+                .push(developer_keyboard(self.number_format, space_s))
+                .push(widget::vertical_space().height(25))
+                .push(developer_mode_row)
+                .spacing(space_s)
+                .into(),
         };
 
         autosize(
@@ -426,8 +377,8 @@ impl cosmic::Application for AppModel {
         )
         .min_width(660.0)
         .max_width(660.0)
-        .min_height(750.0)
-        .max_height(750.0)
+        .min_height(800.0)
+        .max_height(800.0)
         .into()
     }
 
@@ -437,20 +388,21 @@ impl cosmic::Application for AppModel {
     /// on the application's async runtime.
     fn update(&mut self, message: Self::Message) -> Task<cosmic::Action<Self::Message>> {
         match message {
-            Message::InputChanged(value) => {
-                self.cursor_pos = None;
-                if value.contains('=') || value.contains('\n') {
-                    return self.evaluate_input();
-                }
-                let substituted = substitute(value);
-                // Reject a closing paren that would leave more closing than opening,
-                // matching the same rule applied by the ")" button.
-                if get_paren_count(&substituted) < 0 {
-                    // Revert: leave self.input unchanged; the widget will re-sync on
-                    // the next frame.
+            Message::Paste(value) => {
+                let is_developer = matches!(self.nav.active_data::<Page>(), Some(Page::Developer));
+                let validator = if is_developer {
+                    validate_developer
                 } else {
-                    self.input = substituted;
-                }
+                    validate
+                };
+                let filtered: String = value
+                    .chars()
+                    .filter(|c| validator(c, self.number_format))
+                    .collect();
+
+                let new_pos = insert_at_cursor(&mut self.input, &filtered, self.cursor_pos);
+                self.cursor_pos = Some(new_pos);
+                return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
             }
             Message::CopyResultToInput(result) => {
                 self.input.push_str(&result);
@@ -459,29 +411,41 @@ impl cosmic::Application for AppModel {
                     text_input::move_cursor_to_end(Id::new(INPUT_ID)),
                 ]);
             }
-            Message::KeyPressed(value) => {
-                match value.as_str() {
-                    "AC" => {
+            Message::KeyPressed(key) => {
+                match key {
+                    KeyPress::AllClear => {
                         self.history.clear();
                         self.input.clear();
-                        self.result = "0".to_string();
+                        self.result = None;
                         self.cursor_pos = None;
                         return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
                     }
-                    "C" => {
+                    KeyPress::Clear => {
                         self.input.clear();
-                        self.result = "0".to_string();
+                        self.result = None;
                         self.cursor_pos = None;
                         return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
                     }
-                    "⌫" => {
-                        // Button backspace always removes the last character
-                        let mut chars = self.input.chars();
-                        chars.next_back();
-                        self.input = chars.as_str().to_string();
-                        return text_input::move_cursor_to_end(Id::new(INPUT_ID));
+                    KeyPress::Backspace => {
+                        let char_count = self.input.chars().count();
+                        let pos = self.cursor_pos.unwrap_or(char_count);
+                        if pos == 0 || char_count == 0 {
+                            return Task::none();
+                        }
+                        // Remove the character immediately before the cursor (char index pos - 1)
+                        let remove_idx = pos - 1;
+                        let byte_pos = self
+                            .input
+                            .char_indices()
+                            .nth(remove_idx)
+                            .map(|(i, _)| i)
+                            .unwrap_or(self.input.len());
+                        self.input.remove(byte_pos);
+                        let new_pos = remove_idx;
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                     }
-                    "±" => {
+                    KeyPress::Negate => {
                         if self.input.starts_with('−') || self.input.starts_with('-') {
                             let mut chars = self.input.chars();
                             chars.next();
@@ -490,93 +454,159 @@ impl cosmic::Application for AppModel {
                             self.input.insert(0, '−');
                         }
                     }
-                    "=" => {
-                        let scroll_task = self.evaluate_input();
+                    KeyPress::Equals => {
+                        let scroll_task = self.evaluate();
                         return Task::batch([
                             scroll_task,
                             text_input::move_cursor_to_end(Id::new(INPUT_ID)),
                         ]);
                     }
-                    "Ans" => {
-                        if let Some((_, last_result)) = self.history.last().cloned() {
-                            let new_pos = insert_at_cursor(&mut self.input, &last_result, self.cursor_pos);
+                    KeyPress::Ans => {
+                        if let Some((_, last_value)) = self.history.last().cloned() {
+                            let text = format_f64(last_value, self.number_format);
+                            let new_pos = insert_at_cursor(&mut self.input, &text, self.cursor_pos);
                             self.cursor_pos = Some(new_pos);
                             return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                         }
                     }
-                    ")" => {
+                    KeyPress::CloseParen => {
                         if get_paren_count(&self.input) > 0 {
                             self.input.push(')');
                         }
                     }
-                    "Log" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "log()", self.cursor_pos);
+                    KeyPress::Log => {
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "log()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
-                    "Ln" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "ln()", self.cursor_pos);
+                    KeyPress::Ln => {
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "ln()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
-                    "Log₂x" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "log₂()", self.cursor_pos);
+                    KeyPress::Log2 => {
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "log₂()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
-                    "1/x" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "1/()", self.cursor_pos);
+                    KeyPress::Reciprocal => {
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "1/()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
-                    "√" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "√()", self.cursor_pos);
+                    KeyPress::Sqrt => {
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "√()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
-                    "∛" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "∛()", self.cursor_pos);
+                    KeyPress::Cbrt => {
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "∛()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
-                    "x²" => self.input.push('²'),
-                    "x³" => self.input.push('³'),
-                    "xʸ" => self.input.push('^'),
-                    "Abs" => {
-                        let inserted_end = insert_at_cursor(&mut self.input, "abs()", self.cursor_pos);
+                    KeyPress::And => {
+                        let new_pos = insert_at_cursor(&mut self.input, " AND ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Or => {
+                        let new_pos = insert_at_cursor(&mut self.input, " OR ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Nand => {
+                        let new_pos = insert_at_cursor(&mut self.input, " NAND ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Nor => {
+                        let new_pos = insert_at_cursor(&mut self.input, " NOR ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Xnor => {
+                        let new_pos = insert_at_cursor(&mut self.input, " XNOR ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Xor => {
+                        let new_pos = insert_at_cursor(&mut self.input, " XOR ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Lshift => {
+                        let new_pos = insert_at_cursor(&mut self.input, " « ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Rshift => {
+                        let new_pos = insert_at_cursor(&mut self.input, " » ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Not => {
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "NOT()", self.cursor_pos);
+                        let new_pos = inserted_end - 1;
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Mod => {
+                        let new_pos = insert_at_cursor(&mut self.input, " MOD ", self.cursor_pos);
+                        self.cursor_pos = Some(new_pos);
+                        return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
+                    }
+                    KeyPress::Abs => {
+                        let inserted_end =
+                            insert_at_cursor(&mut self.input, "abs()", self.cursor_pos);
                         let pos = inserted_end - 1;
                         self.cursor_pos = Some(pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
                     }
-                    _ => {
-                        let text = substitute(value);
-                        let new_pos = insert_at_cursor(&mut self.input, &text, self.cursor_pos);
+                    KeyPress::Insert(text) => {
+                        let substituted = substitute(&text);
+                        let number_format = self.number_format;
+                        let is_developer =
+                            matches!(self.nav.active_data::<Page>(), Some(Page::Developer));
+                        let validator = if is_developer {
+                            validate_developer
+                        } else {
+                            validate
+                        };
+                        let validated: String = substituted
+                            .chars()
+                            .filter(|c| validator(c, number_format))
+                            .collect();
+                        if validated.is_empty() {
+                            return Task::none();
+                        }
+                        let new_pos =
+                            insert_at_cursor(&mut self.input, &validated, self.cursor_pos);
                         self.cursor_pos = Some(new_pos);
                         return text_input::move_cursor_to(Id::new(INPUT_ID), new_pos);
                     }
                 }
                 return text_input::move_cursor_to_end(Id::new(INPUT_ID));
             }
-            Message::ModeSelected(mode) => {
-                if let Some(page) = Page::from_str(&mode) {
-                    let target = self.nav.iter().find(|&id| {
-                        self.nav
-                            .data::<Page>(id)
-                            .map(|data| {
-                                std::mem::discriminant(data) == std::mem::discriminant(&page)
-                            })
-                            .unwrap_or(false)
-                    });
-
-                    if let Some(id) = target {
-                        return self.on_nav_select(id);
-                    }
+            Message::ModeSelected(page) => {
+                let target = self
+                    .nav
+                    .iter()
+                    .find(|&id| self.nav.data::<Page>(id) == Some(&page));
+                if let Some(id) = target {
+                    return self.on_nav_select(id);
                 }
             }
             Message::ToggleContextPage(context_page) => {
@@ -597,10 +627,12 @@ impl cosmic::Application for AppModel {
             },
             Message::ArrowLeft => {
                 let len = self.input.chars().count();
-                self.cursor_pos = Some(match self.cursor_pos {
+                let pos = match self.cursor_pos {
                     None => len.saturating_sub(1),
                     Some(pos) => pos.saturating_sub(1),
-                });
+                };
+                self.cursor_pos = Some(pos);
+                return text_input::move_cursor_to(Id::new(INPUT_ID), pos);
             }
             Message::ArrowRight => {
                 let len = self.input.chars().count();
@@ -609,12 +641,32 @@ impl cosmic::Application for AppModel {
                     Some(pos) if pos + 1 >= len => None,
                     Some(pos) => Some(pos + 1),
                 };
+                return match self.cursor_pos {
+                    Some(pos) => text_input::move_cursor_to(Id::new(INPUT_ID), pos),
+                    None => text_input::move_cursor_to_end(Id::new(INPUT_ID)),
+                };
             }
             Message::Home => {
                 self.cursor_pos = Some(0);
+                return text_input::move_cursor_to(Id::new(INPUT_ID), 0);
             }
             Message::End => {
                 self.cursor_pos = None;
+                return text_input::move_cursor_to_end(Id::new(INPUT_ID));
+            }
+            Message::NumberFormatSelected(number_format) => {
+                self.number_format = number_format;
+                self.save_number_format();
+                // When triggered by keyboard shortcut, navigate to Developer page
+                if !matches!(self.nav.active_data::<Page>(), Some(Page::Developer)) {
+                    let dev_id = self
+                        .nav
+                        .iter()
+                        .find(|&id| matches!(self.nav.data::<Page>(id), Some(Page::Developer)));
+                    if let Some(id) = dev_id {
+                        return self.on_nav_select(id);
+                    }
+                }
             }
         }
         Task::none()
@@ -623,6 +675,12 @@ impl cosmic::Application for AppModel {
     fn on_nav_select(&mut self, id: nav_bar::Id) -> Task<cosmic::Action<Self::Message>> {
         // Activate the page in the model.
         self.nav.activate(id);
+        if matches!(self.nav.active_data::<Page>(), Some(Page::Developer)) {
+            self.number_format =
+                NumberFormat::from_str(&self.config.number_format).unwrap_or_default();
+        } else {
+            self.number_format = NumberFormat::Decimal;
+        }
 
         // Persist the selected page to config.
         if let Some(page) = self.nav.active_data::<Page>() {
@@ -636,68 +694,25 @@ impl cosmic::Application for AppModel {
     }
 }
 
-fn get_paren_count(input: &String) -> i32 {
-    let mut opening = 0;
-    let mut closing = 0;
-
-    for c in input.chars() {
-        match c {
-            '(' => opening += 1,
-            ')' => closing += 1,
-            _ => (),
-        };
-    }
-
-    println!("Parens count: open: {opening}, close: {closing}");
-
-    opening - closing
-}
-
-/// Inserts `text` into `input` at `cursor_pos` (char index), or appends if None.
-/// Returns the new cursor position (after the inserted text).
-fn insert_at_cursor(input: &mut String, text: &str, cursor_pos: Option<usize>) -> usize {
-    match cursor_pos {
-        Some(pos) => {
-            let byte_pos = input
-                .char_indices()
-                .nth(pos)
-                .map(|(i, _)| i)
-                .unwrap_or(input.len());
-            input.insert_str(byte_pos, text);
-            pos + text.chars().count()
-        }
-        None => {
-            input.push_str(text);
-            input.chars().count()
-        }
-    }
-}
-
-/// Substitute certain characters with their calc lib equivalents
-fn substitute(input: String) -> String {
-    input.replace('*', "×").replace('/', "÷").replace('-', "−")
-}
-
-fn make_button(label: &str, handler: Option<Message>) -> Element<'_, Message> {
-    let text_handler = handler.unwrap_or(Message::KeyPressed(label.to_string()));
-
-    button::custom(
-        text(label)
-            .size(18)
-            .font(cosmic::font::bold())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Horizontal::Center)
-            .align_y(Vertical::Center),
-    )
-    .width(60)
-    .height(40)
-    .on_press(text_handler)
-    .into()
+fn mode_buttons_row(space_s: u16) -> widget::Row<'static, Message> {
+    widget::row::with_capacity(3)
+        .push(icon_button_view(
+            Page::Basic,
+            include_bytes!("../resources/basic.svg"),
+        ))
+        .push(icon_button_view(
+            Page::Advanced,
+            include_bytes!("../resources/advanced.svg"),
+        ))
+        .push(icon_button_view(
+            Page::Developer,
+            include_bytes!("../resources/developer.svg"),
+        ))
+        .spacing(space_s)
 }
 
 // Function to create the button with an SVG icon
-fn icon_button_view(id: String, svg_data: &'static [u8]) -> Element<'static, Message> {
+fn icon_button_view(page: Page, svg_data: &'static [u8]) -> Element<'static, Message> {
     // 1. Load the SVG data from memory at compile time
     let handle = svg::Handle::from_memory(svg_data);
 
@@ -716,7 +731,7 @@ fn icon_button_view(id: String, svg_data: &'static [u8]) -> Element<'static, Mes
 
     // 4. Wrap the content in a Button and add behavior
     button::custom(content)
-        .on_press(Message::ModeSelected(id))
+        .on_press(Message::ModeSelected(page))
         .padding(10)
         .into()
 }
@@ -733,25 +748,18 @@ impl AppModel {
         }
     }
 
-    /// Evaluate the current input and update the result and history
-    pub fn evaluate_input(&mut self) -> Task<cosmic::Action<Message>> {
-        let expression = self
-            .input
-            .replace('×', "*")
-            .replace('÷', "/")
-            .replace('−', "-")
-            .replace('π', &std::f64::consts::PI.to_string())
-            .replace('e', &std::f64::consts::E.to_string())
-            .replace('²', "^2")
-            .replace('³', "^3")
-            .replace('√', "sqrt")
-            .replace('∛', "cbrt")
-            .replace("log₂", "logtwo");
+    fn save_number_format(&mut self) {
+        self.config.number_format = self.number_format.as_str().to_string();
+        if let Some(ref handler) = self.config_handler {
+            let _ = self.config.write_entry(handler);
+        }
+    }
 
-        match evaluate(expression) {
-            Ok(result) => {
-                self.result = result.value();
-                self.history.push((self.input.clone(), self.result.clone()));
+    fn evaluate(&mut self) -> Task<cosmic::Action<Message>> {
+        match evaluate_input(&self.input, self.number_format) {
+            EvalResult::Success { expression, value } => {
+                self.result = Some(Ok(value));
+                self.history.push((expression, value));
                 self.input.clear();
                 self.cursor_pos = None;
                 cosmic::iced::widget::scrollable::snap_to(
@@ -759,8 +767,8 @@ impl AppModel {
                     cosmic::iced::widget::scrollable::RelativeOffset::END,
                 )
             }
-            Err(err) => {
-                self.result = err;
+            EvalResult::Failure(err) => {
+                self.result = Some(Err(err.to_string()));
                 Task::none()
             }
         }
@@ -768,6 +776,7 @@ impl AppModel {
 }
 
 /// The page to display in the application.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Basic,
     Advanced,
