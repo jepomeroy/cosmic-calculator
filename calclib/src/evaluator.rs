@@ -7,15 +7,15 @@ use crate::utils::{change_sign, is_integer, is_negative};
 use statrs::function::{factorial, gamma::gamma};
 
 enum BitOps {
-    AND,
-    OR,
-    NAND,
-    NOR,
-    XOR,
-    XNOR,
-    LSHIFT,
-    RSHIFT,
-    MOD,
+    And,
+    Or,
+    Nand,
+    Nor,
+    Xor,
+    Xnor,
+    Lshift,
+    Rshift,
+    Mod,
 }
 
 pub fn evaluate(input: &str, number_format: NumberFormat) -> Result<f64, CalcLibError> {
@@ -43,15 +43,15 @@ fn evaluate_expression(expression: Expression) -> Result<f64, CalcLibError> {
             let right_num = evaluate_expression(*right)?;
 
             match operator {
-                Token::And => bitwise_operation(left_num, right_num, BitOps::AND),
-                Token::Or => bitwise_operation(left_num, right_num, BitOps::OR),
-                Token::Nand => bitwise_operation(left_num, right_num, BitOps::NAND),
-                Token::Nor => bitwise_operation(left_num, right_num, BitOps::NOR),
-                Token::Xor => bitwise_operation(left_num, right_num, BitOps::XOR),
-                Token::Xnor => bitwise_operation(left_num, right_num, BitOps::XNOR),
-                Token::Lshift => bitwise_operation(left_num, right_num, BitOps::LSHIFT),
-                Token::Rshift => bitwise_operation(left_num, right_num, BitOps::RSHIFT),
-                Token::Mod => bitwise_operation(left_num, right_num, BitOps::MOD),
+                Token::And => bitwise_operation(left_num, right_num, BitOps::And),
+                Token::Or => bitwise_operation(left_num, right_num, BitOps::Or),
+                Token::Nand => bitwise_operation(left_num, right_num, BitOps::Nand),
+                Token::Nor => bitwise_operation(left_num, right_num, BitOps::Nor),
+                Token::Xor => bitwise_operation(left_num, right_num, BitOps::Xor),
+                Token::Xnor => bitwise_operation(left_num, right_num, BitOps::Xnor),
+                Token::Lshift => bitwise_operation(left_num, right_num, BitOps::Lshift),
+                Token::Rshift => bitwise_operation(left_num, right_num, BitOps::Rshift),
+                Token::Mod => bitwise_operation(left_num, right_num, BitOps::Mod),
                 Token::Plus => Ok(left_num + right_num),
                 Token::Minus => Ok(left_num - right_num),
                 Token::Multiply => Ok(left_num * right_num),
@@ -107,23 +107,23 @@ fn bitwise_operation(left: f64, right: f64, op: BitOps) -> Result<f64, CalcLibEr
     let right = right as i64;
 
     let result = match op {
-        BitOps::AND => left & right,
-        BitOps::OR => left | right,
-        BitOps::NAND => !(left & right),
-        BitOps::NOR => !(left | right),
-        BitOps::XOR => left ^ right,
-        BitOps::XNOR => !(left ^ right),
-        BitOps::LSHIFT | BitOps::RSHIFT => {
-            if right < 0 || right >= 64 {
+        BitOps::And => left & right,
+        BitOps::Or => left | right,
+        BitOps::Nand => !(left & right),
+        BitOps::Nor => !(left | right),
+        BitOps::Xor => left ^ right,
+        BitOps::Xnor => !(left ^ right),
+        BitOps::Lshift | BitOps::Rshift => {
+            if !(0..64).contains(&right) {
                 return Err(CalcLibError::ShiftOverflow());
             }
-            if matches!(op, BitOps::LSHIFT) {
+            if matches!(op, BitOps::Lshift) {
                 left << right
             } else {
                 left >> right
             }
         }
-        BitOps::MOD => {
+        BitOps::Mod => {
             if right == 0 {
                 return Err(CalcLibError::DivisionByZero());
             }

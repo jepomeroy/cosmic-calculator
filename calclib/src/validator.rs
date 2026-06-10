@@ -23,11 +23,9 @@ pub fn validate(input: &char, number_format: NumberFormat) -> bool {
 
     match number_format {
         NumberFormat::Decimal => {
-            symbols_match || matches!(input, '0'..='9') || matches!(input, '.' | 'e')
+            symbols_match || input.is_ascii_digit() || matches!(input, '.' | 'e')
         }
-        NumberFormat::Hexadecimal => {
-            symbols_match || matches!(input, '0'..='9' | 'a'..='f' | 'A'..='F')
-        }
+        NumberFormat::Hexadecimal => symbols_match || input.is_ascii_hexdigit(),
         NumberFormat::Binary => symbols_match || matches!(input, '0' | '1'),
     }
 }

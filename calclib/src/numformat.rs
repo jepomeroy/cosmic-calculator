@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NumberFormat {
@@ -27,12 +27,18 @@ impl NumberFormat {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<NumberFormat> {
+    // pub fn from_str(s: &str) -> Option<NumberFormat> {}
+}
+
+impl FromStr for NumberFormat {
+    type Err = std::fmt::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "decimal" => Some(NumberFormat::Decimal),
-            "hexadecimal" => Some(NumberFormat::Hexadecimal),
-            "binary" => Some(NumberFormat::Binary),
-            _ => None,
+            "decimal" => Ok(NumberFormat::Decimal),
+            "hexadecimal" => Ok(NumberFormat::Hexadecimal),
+            "binary" => Ok(NumberFormat::Binary),
+            _ => Err(std::fmt::Error),
         }
     }
 }

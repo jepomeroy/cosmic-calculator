@@ -19,6 +19,7 @@ use cosmic::widget::{
     self, Id, about::About, autosize::autosize, button, icon, menu, nav_bar, svg, text, text_input,
 };
 use std::collections::HashMap;
+use std::str::FromStr;
 
 const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
 const APP_ICON: &[u8] = include_bytes!("../resources/icons/hicolor/scalable/apps/icon.svg");
@@ -232,9 +233,9 @@ impl cosmic::Application for AppModel {
                     keyboard::Key::Named(keyboard::key::Named::Enter) => {
                         Some(Message::KeyPressed(KeyPress::Equals))
                     }
-                    _ => text.and_then(|t| match t.as_str() {
-                        "=" => Some(Message::KeyPressed(KeyPress::Equals)),
-                        s => Some(Message::KeyPressed(KeyPress::Insert(s.to_string()))),
+                    _ => text.map(|t| match t.as_str() {
+                        "=" => Message::KeyPressed(KeyPress::Equals),
+                        s => Message::KeyPressed(KeyPress::Insert(s.to_string())),
                     }),
                 }
             } else {
@@ -295,7 +296,7 @@ impl cosmic::Application for AppModel {
             .push(
                 text_input("", &self.input)
                     .id(Id::new(INPUT_ID))
-                    .on_paste(|s| Message::Paste(s))
+                    .on_paste(Message::Paste)
                     .on_submit(|_| Message::KeyPressed(KeyPress::Equals))
                     .always_active()
                     .size(24)

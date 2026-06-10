@@ -148,7 +148,7 @@ impl Parser {
                 expr
             }
             Some(Token::Number(value)) => Some(Expression::Number { value: *value }),
-            Some(Token::Function(func_type)) => self.parse_function(func_type.clone()),
+            Some(Token::Function(func_type)) => self.parse_function(*func_type),
             _ => return None,
         };
 
@@ -187,6 +187,8 @@ impl Parser {
 
 #[cfg(test)]
 mod tests {
+    use core::f64;
+
     use super::*;
 
     #[test]
@@ -392,10 +394,12 @@ mod tests {
                 })),
             ),
             (
-                "ln(2.71828)",
+                "ln(2.718281828459045)",
                 Ok(Some(Expression::Function {
                     function: FunctionType::Ln,
-                    argument: Box::new(Expression::Number { value: 2.71828 }),
+                    argument: Box::new(Expression::Number {
+                        value: f64::consts::E,
+                    }),
                 })),
             ),
             (
