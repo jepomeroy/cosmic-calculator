@@ -2,12 +2,12 @@
 members = [".", "calclib"]
 
 [package]
-name = "cosmic-calculator"
-version = "0.3.0"
+name = "cosmicesque-calculator"
+version = "0.4.0"
 edition = "2024"
 license = "MIT"
-description = "Cosmic Desktop Calculator"
-repository = "https://github.com/jepomeroy/cosmic-calculator"
+description = "Cosmic-esque Desktop Calculator"
+repository = "https://github.com/jepomeroy/cosmicesque-calculator"
 
 [dependencies]
 futures-util = "0.3.32"
