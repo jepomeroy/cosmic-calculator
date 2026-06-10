@@ -1,6 +1,8 @@
-# Cosmic Calculator
+# Cosmic-esque Calculator
 
 A calculator application for the [COSMIC][cosmic] desktop environment, built with [libcosmic][libcosmic] and Rust.
+
+This is not associated with Pop OS, Cosmic, or System 76. It implements a Cosmic UI and the ELM architecture.
 
 ## Features
 
